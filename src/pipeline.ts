@@ -33,6 +33,20 @@ export interface PipelineProvider {
   tokenMultiplier?: number;
 }
 
+/** Progress events emitted during pipeline execution. */
+export interface ProgressEvent {
+  type: "start" | "annotation-start" | "annotation-done" | "annotation-error" | "assembling" | "complete";
+  total?: number;
+  current?: number;
+  tag?: string;
+  line?: number;
+  provider?: string;
+  model?: string;
+  wordCount?: number;
+  error?: string;
+  message?: string;
+}
+
 export interface PipelineInput {
   content: string;
   versionContent: string;
@@ -43,6 +57,10 @@ export interface PipelineInput {
   bookId: string;
   /** Provider lookup: given a provider name, returns an object with a complete() method, or undefined */
   getProvider: (name: string) => PipelineProvider | undefined;
+  /** Optional callback for real-time progress updates. */
+  onProgress?: (event: ProgressEvent) => void;
+  /** Optional cancellation check; return true to abort the pipeline loop. */
+  isCancelled?: () => boolean;
 }
 
 export interface PipelineResult {
@@ -96,6 +114,7 @@ export function buildRouteConfig(s: PennySettings): RouteConfig {
 export async function runPipeline(input: PipelineInput): Promise<PipelineResult | null> {
   const startTime = Date.now();
   const { content, settings, chapterId, bookId } = input;
+  const onProgress = input.onProgress;
 
   // (a) Parse annotations
   const allAnnotations = parseAnnotations(content);
@@ -114,6 +133,13 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
   // Build route config
   const routeConfig = buildRouteConfig(settings);
 
+  // Emit start event
+  onProgress?.({
+    type: "start",
+    total: toProcess.length,
+    message: `Processing ${toProcess.length} annotation${toProcess.length === 1 ? "" : "s"}...`,
+  });
+
   // Count passthrough annotations
   const passthroughCount = allAnnotations.filter((a) => !a.actionable).length;
 
@@ -126,10 +152,33 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
   const flags: ReviewFlag[] = [];
   const processedTags: string[] = [];
   let hadErrors = false;
+  let completedCount = 0;
 
-  for (const annotation of toProcess) {
+  for (let i = 0; i < toProcess.length; i++) {
+    // Check for cancellation before each annotation
+    if (input.isCancelled?.()) {
+      onProgress?.({
+        type: "complete",
+        message: `Cancelled. Processed ${completedCount} of ${toProcess.length} annotation${toProcess.length === 1 ? "" : "s"}.`,
+      });
+      break;
+    }
+
+    const annotation = toProcess[i];
     const route = getRoute(annotation.tag, routeConfig);
     const provider = input.getProvider(route.provider);
+
+    // Emit annotation-start
+    onProgress?.({
+      type: "annotation-start",
+      current: i + 1,
+      total: toProcess.length,
+      tag: annotation.tag,
+      line: annotation.lineStart,
+      provider: route.provider,
+      model: route.model,
+      message: `[${i + 1}/${toProcess.length}] ${annotation.tag} line ${annotation.lineStart} ... calling ${route.provider} ${route.model} ...`,
+    });
 
     if (!provider) {
       // Insert error marker and continue
@@ -141,6 +190,15 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         description: `Provider "${route.provider}" not found for [${annotation.tag}]`,
       });
       hadErrors = true;
+      onProgress?.({
+        type: "annotation-error",
+        current: i + 1,
+        total: toProcess.length,
+        tag: annotation.tag,
+        line: annotation.lineStart,
+        error: `Provider "${route.provider}" not available`,
+        message: `[${i + 1}/${toProcess.length}] ${annotation.tag} line ${annotation.lineStart} ... ERROR: Provider "${route.provider}" not available`,
+      });
       continue;
     }
 

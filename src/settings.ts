@@ -164,7 +164,12 @@ export class PennySettingTab extends PluginSettingTab {
             t.inputEl.style.width = "300px";
           })
           .onChange(async (value) => {
-            this.plugin.settings.ollamaEndpoint = value.trim();
+            const trimmed = value.trim();
+            if (trimmed && !trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+              new Notice("PENNY: Ollama endpoint must start with http:// or https://");
+              return;
+            }
+            this.plugin.settings.ollamaEndpoint = trimmed;
             await this.plugin.saveSettings();
           })
       );
@@ -292,10 +297,35 @@ export class PennySettingTab extends PluginSettingTab {
           .setValue(String(this.plugin.settings.contextBudget))
           .onChange(async (value) => {
             const parsed = parseInt(value, 10);
-            if (!isNaN(parsed) && parsed > 0) {
-              this.plugin.settings.contextBudget = parsed;
-              await this.plugin.saveSettings();
+            if (isNaN(parsed) || parsed <= 0) {
+              new Notice("PENNY: Context budget must be a positive number.");
+              text.setValue(String(this.plugin.settings.contextBudget));
+              return;
             }
+            this.plugin.settings.contextBudget = parsed;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Max output tokens
+    new Setting(details)
+      .setName("Max output tokens")
+      .setDesc(
+        "Maximum tokens the LLM can generate per revision. Higher = longer output allowed but more expensive. Default: 16000."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("16000")
+          .setValue(String(this.plugin.settings.maxTokens))
+          .onChange(async (value) => {
+            const parsed = parseInt(value, 10);
+            if (isNaN(parsed) || parsed <= 0) {
+              new Notice("PENNY: Max output tokens must be a positive number.");
+              text.setValue(String(this.plugin.settings.maxTokens));
+              return;
+            }
+            this.plugin.settings.maxTokens = parsed;
+            await this.plugin.saveSettings();
           })
       );
   }
@@ -592,6 +622,9 @@ export class PennySettingTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.systemPromptTemplate)
           .onChange(async (value) => {
+            if (!value.includes("{chapter}")) {
+              new Notice("PENNY: Warning -- your prompt template is missing {chapter}. The LLM won't see the chapter content.");
+            }
             this.plugin.settings.systemPromptTemplate = value;
             await this.plugin.saveSettings();
           })
@@ -880,21 +913,29 @@ export class PennySettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.autoCommitAfterProcessing)
           .onChange(async (value) => {
             this.plugin.settings.autoCommitAfterProcessing = value;
+            if (!value) {
+              this.plugin.settings.autoPushAfterCommit = false;
+            }
             await this.plugin.saveSettings();
+            this.display(); // Re-render to update autoPush dependency state
           })
       );
 
-    new Setting(details)
+    const autoPushSetting = new Setting(details)
       .setName("Auto-push after commit")
-      .setDesc("Automatically push to remote after committing.")
-      .addToggle((toggle) =>
+      .setDesc("Automatically push to remote after committing. Requires 'Auto-commit after processing' to be enabled.")
+      .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.autoPushAfterCommit)
           .onChange(async (value) => {
             this.plugin.settings.autoPushAfterCommit = value;
             await this.plugin.saveSettings();
-          })
-      );
+          });
+        toggle.setDisabled(!this.plugin.settings.autoCommitAfterProcessing);
+      });
+    if (!this.plugin.settings.autoCommitAfterProcessing) {
+      autoPushSetting.settingEl.style.opacity = "0.5";
+    }
 
     new Setting(details)
       .setName("Commit message format")

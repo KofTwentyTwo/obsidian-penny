@@ -457,4 +457,81 @@ She walked in.
     // readVersion("") returns 0, so nextVersion should be 1
     expect(result!.newVersion).toBe(1);
   });
+
+  it("uses non-default maxTokens (8000) and passes it to the provider", async () => {
+    const mock = createMockProvider(["Revised with lower token limit."]);
+
+    const settingsWithLowTokens: PennySettings = {
+      ...TEST_SETTINGS,
+      maxTokens: 8000,
+    };
+
+    const simpleChapter = `---
+type: chapter
+book: 1
+chapter: 1
+---
+
+She walked in.
+%% REWRITE: Add detail %%
+`;
+
+    const input: PipelineInput = {
+      content: simpleChapter,
+      versionContent: "0",
+      stateContent: "",
+      contextFiles: makeContextFiles(simpleChapter),
+      settings: settingsWithLowTokens,
+      chapterId: "ch-01",
+      bookId: "book-1",
+      getProvider: () => mock.provider,
+    };
+
+    const result = await runPipeline(input);
+    expect(result).not.toBeNull();
+
+    const calls = mock.getCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].maxTokens).toBe(8000);
+  });
+
+  it("works with empty customVoiceRules", async () => {
+    const mock = createMockProvider(["Revised passage."]);
+
+    const settingsEmptyVoice: PennySettings = {
+      ...TEST_SETTINGS,
+      customVoiceRules: "",
+    };
+
+    const simpleChapter = `---
+type: chapter
+book: 1
+chapter: 1
+---
+
+She walked in.
+%% REWRITE: Add detail %%
+`;
+
+    const input: PipelineInput = {
+      content: simpleChapter,
+      versionContent: "0",
+      stateContent: "",
+      contextFiles: makeContextFiles(simpleChapter),
+      settings: settingsEmptyVoice,
+      chapterId: "ch-01",
+      bookId: "book-1",
+      getProvider: () => mock.provider,
+    };
+
+    const result = await runPipeline(input);
+    expect(result).not.toBeNull();
+
+    const calls = mock.getCalls();
+    expect(calls).toHaveLength(1);
+    // System prompt should still be valid (non-empty)
+    expect(calls[0].systemPrompt.length).toBeGreaterThan(0);
+    // The prompt should still function without voice rules
+    expect(calls[0].userPrompt).toContain("REWRITE");
+  });
 });
