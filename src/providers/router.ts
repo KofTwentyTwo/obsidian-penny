@@ -45,8 +45,33 @@ export interface ResolvedRoute {
  * 1. Look up the tag in TAG_COMPLEXITY to get a tier.
  * 2. If not found, fall back to "standard".
  * 3. Return the provider+model from the config for that tier.
+ * 4. If the model is "auto-latest", resolve it to the recommended model for that tier.
  */
 export function getRoute(tag: string, config: RouteConfig): ResolvedRoute {
   const tier: ComplexityTier = TAG_COMPLEXITY[tag] ?? "standard";
-  return config[tier];
+  const route = config[tier];
+  return {
+    provider: route.provider,
+    model: resolveModel(route.model, tier),
+  };
+}
+
+/**
+ * Map the special "auto-latest" model identifier to the recommended
+ * concrete model for the given complexity tier.
+ *
+ * When the user selects "Auto (recommended)" in settings, the model
+ * field is stored as "auto-latest". At runtime this resolves to the
+ * best Anthropic model for the tier.
+ */
+export function resolveModel(model: string, tier: string): string {
+  if (model === "auto-latest") {
+    switch (tier) {
+      case "light": return "claude-haiku-4-5";
+      case "standard": return "claude-sonnet-4-6";
+      case "heavy": return "claude-opus-4-6";
+      default: return "claude-sonnet-4-6";
+    }
+  }
+  return model;
 }
