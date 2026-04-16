@@ -123,9 +123,9 @@ export function assembleContext(
   const chapter = files.chapter;
   remaining -= estimateTokens(chapter, tokenMultiplier);
 
-  // Priority 2: voice tests.
+  // Priority 2: voice tests (budget-gated like all other context).
   let voiceTests = "";
-  if (files.voiceTests) {
+  if (files.voiceTests && remaining > 0) {
     // We don't know characters yet at this layer, so include full voice tests.
     // The caller can pre-filter using selectVoiceTestSection.
     voiceTests = files.voiceTests;

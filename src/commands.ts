@@ -452,13 +452,38 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     // Pre-compute all output paths and add to processingFiles BEFORE the
     // pipeline runs, preventing the auto-save hook from picking them up
     // during the async pipeline execution.
-    const currentVersion = readVersion(versionContent);
+    let currentVersion = readVersion(versionContent);
+    let effectiveVersionContent = versionContent;
     const expectedNextVersion = nextVersion(currentVersion);
-    const newVersionPath = `${folderPath}/${chapterId}.v${expectedNextVersion}.md`;
+    let newVersionPath = `${folderPath}/${chapterId}.v${expectedNextVersion}.md`;
     const versionFilePath = `${folderPath}/.version`;
     const stateFilePath = `${folderPath}/.state.json`;
 
-    const newPaths = [newVersionPath, versionFilePath, stateFilePath];
+    // MEDIUM-1: If a file at the expected version path already exists,
+    // scan the folder for the highest existing version and use that + 1.
+    const existingFile = plugin.app.vault.getAbstractFileByPath(newVersionPath);
+    if (existingFile) {
+      const folder = plugin.app.vault.getAbstractFileByPath(folderPath);
+      if (folder instanceof TFolder) {
+        let maxVer = 0;
+        for (const child of folder.children) {
+          const match = child.name.match(/\.v(\d+)\.md$/);
+          if (match) maxVer = Math.max(maxVer, parseInt(match[1]));
+        }
+        currentVersion = maxVer;
+        effectiveVersionContent = String(maxVer);
+        const actualNextVersion = nextVersion(maxVer);
+        newVersionPath = `${folderPath}/${chapterId}.v${actualNextVersion}.md`;
+      }
+    }
+
+    // Pre-compute review and log paths so they are in processingFiles
+    // BEFORE the pipeline runs (prevents auto-save hook from picking them up).
+    const effectiveNextVersion = nextVersion(currentVersion);
+    const reviewPath = getReviewFilePath(reviewsFolder, bookId, chapterId, effectiveNextVersion);
+    const logPath = getLogFilePath(activityLogFolder, bookId);
+
+    const newPaths = [newVersionPath, versionFilePath, stateFilePath, reviewPath, logPath];
     for (const p of newPaths) {
       plugin.processingFiles.add(p);
       createdPaths.push(p);
@@ -467,7 +492,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     // Run the pipeline
     const result = await runPipeline({
       content,
-      versionContent,
+      versionContent: effectiveVersionContent,
       stateContent,
       contextFiles,
       settings: s,
@@ -511,14 +536,12 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       await plugin.app.vault.create(stateFilePath, result.stateJson);
     }
 
-    // Write review note
-    const reviewPath = getReviewFilePath(reviewsFolder, bookId, chapterId, result.newVersion);
+    // Write review note (reviewPath pre-computed above)
     const reviewFolder = reviewPath.split("/").slice(0, -1).join("/");
     await ensureFolder(plugin, reviewFolder);
     await plugin.app.vault.create(reviewPath, result.reviewContent);
 
-    // Append to activity log
-    const logPath = getLogFilePath(activityLogFolder, bookId);
+    // Append to activity log (logPath pre-computed above)
     const logFolder = logPath.split("/").slice(0, -1).join("/");
     await ensureFolder(plugin, logFolder);
     const existingLog = plugin.app.vault.getAbstractFileByPath(logPath);
@@ -547,6 +570,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
         chapter: chapterId,
         version: String(result.newVersion),
         tags: result.tags.join(", "),
+        createdPaths,
       });
       if (s.autoPushAfterCommit) {
         await gitPush(plugin);
@@ -971,6 +995,8 @@ interface CommitContext {
   chapter?: string;
   version?: string;
   tags?: string;
+  /** Paths that PENNY created/modified during processing -- staged individually. */
+  createdPaths?: string[];
 }
 
 /**
@@ -1002,7 +1028,11 @@ async function gitCommit(plugin: PennyPlugin, ctx?: CommitContext): Promise<void
     const otherChanges: string[] = [];
 
     for (const line of changedFiles) {
-      const filePath = line.slice(3); // Strip status prefix (e.g., " M " or "?? ")
+      let filePath = line.slice(3); // Strip status prefix (e.g., " M " or "?? ")
+      // Handle renamed/copied files: "R  old -> new" format
+      if (filePath.includes(" -> ")) {
+        filePath = filePath.split(" -> ").pop() ?? filePath;
+      }
       if (filePath.includes("04-drafts") || filePath.includes("drafts")) {
         const chMatch = filePath.match(/ch-\d+/);
         if (chMatch && !chapterChanges.includes(chMatch[0])) {
@@ -1048,8 +1078,18 @@ async function gitCommit(plugin: PennyPlugin, ctx?: CommitContext): Promise<void
         ? `${message}\n\n${bodyParts.join("\n")}`
         : message;
 
-    // Stage and commit
-    await gitExec(plugin, ["add", "-A"]);
+    // Stage only PENNY-related files
+    if (ctx?.createdPaths?.length) {
+      for (const p of ctx.createdPaths) {
+        await gitExec(plugin, ["add", p]);
+      }
+    } else {
+      // Fallback: stage only drafts and reviews folders
+      const s = plugin.settings;
+      if (s.draftsFolder) await gitExec(plugin, ["add", normalizePath(s.draftsFolder)]);
+      if (s.reviewsFolder) await gitExec(plugin, ["add", normalizePath(s.reviewsFolder)]);
+      if (s.activityLogFolder) await gitExec(plugin, ["add", normalizePath(s.activityLogFolder)]);
+    }
     await gitExec(plugin, ["commit", "-m", fullMessage]);
 
     new Notice(`PENNY: Committed. ${message}`);
