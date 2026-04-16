@@ -706,7 +706,9 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
     if (!(child instanceof TFolder)) continue;
     const bookFolder = child;
 
-    for (const bookChild of bookFolder.children) {
+    // Snapshot the children array -- vault.delete mutates the live array during iteration
+    const bookChildren = [...bookFolder.children];
+    for (const bookChild of bookChildren) {
       if (!(bookChild instanceof TFile)) continue;
       if (!isChapterFile(bookChild, plugin)) continue;
 

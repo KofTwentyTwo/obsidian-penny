@@ -24,12 +24,16 @@
   "author": "James Maes",
   "license": "MIT",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^4.1.4",
     "builtin-modules": "^3.3.0",
     "esbuild": "^0.28.0",
+    "eslint": "^10.2.0",
     "obsidian": "latest",
     "tslib": "2.6.2",
     "typescript": "5.4.5",
+    "typescript-eslint": "^8.58.2",
     "vitest": "^4.1.4"
   }
 }
