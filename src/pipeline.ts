@@ -9,8 +9,9 @@
 
 import type { AnnotatedSection, AnnotationChange, ReviewFlag, PennySettings } from "./types";
 import type { ContextFiles } from "./context";
-import type { CompletionRequest, CompletionResponse, LLMService } from "./providers/service";
-import type { RouteConfig } from "./providers/router";
+import type { CompletionRequest, CompletionResponse } from "./providers/service";
+import type { RouteConfig, ComplexityTier } from "./providers/router";
+import { TAG_COMPLEXITY } from "./providers/router";
 import { parseAnnotations } from "./parser";
 import { assembleContext } from "./context";
 import { buildPrompt, callProvider } from "./drafter";
@@ -28,6 +29,8 @@ import { getRoute } from "./providers/router";
  */
 export interface PipelineProvider {
   complete(request: CompletionRequest): Promise<CompletionResponse>;
+  /** Optional token multiplier for this provider (words-to-tokens ratio). */
+  tokenMultiplier?: number;
 }
 
 export interface PipelineInput {
@@ -114,11 +117,6 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
   // Count passthrough annotations
   const passthroughCount = allAnnotations.filter((a) => !a.actionable).length;
 
-  // (d) Parse frontmatter for character detection
-  const { frontmatter: fm } = parseFrontmatter(content);
-  const focusField = typeof fm.focus === "string" ? fm.focus : "";
-  detectCharacters(content, focusField);
-
   // Word count before processing
   const wordCountBefore = countProseWords(content, settings.proseMarker);
 
@@ -147,11 +145,15 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
     }
 
     try {
+      // Determine token multiplier from the provider (defaults to 1.33 for Anthropic)
+      const tokenMultiplier = provider.tokenMultiplier ?? 1.33;
+
       // Build context
       const assembledCtx = assembleContext(
         input.contextFiles,
         annotation,
         settings,
+        tokenMultiplier,
       );
 
       // Build prompt
@@ -161,14 +163,19 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         settings.systemPromptTemplate,
       );
 
+      // Only enable thinking for "heavy" tier tags to avoid burning budget on trivial annotations
+      const tier: ComplexityTier = TAG_COMPLEXITY[annotation.tag] ?? "standard";
+      const useThinking = tier === "heavy";
+
       // Call provider
-      const response = await callProvider(provider as LLMService, {
+      const response = await callProvider(provider, {
         systemPrompt: system,
         userPrompt: user,
         model: route.model,
         maxTokens: settings.maxTokens ?? 16000,
         apiKey: settings.anthropicApiKey,
         endpoint: route.provider === "ollama" ? settings.ollamaEndpoint : undefined,
+        useThinking,
       });
 
       revisions.push({ annotation, revisedText: response.text });

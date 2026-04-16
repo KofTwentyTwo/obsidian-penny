@@ -22,6 +22,18 @@ function isPassthrough(tag: string): boolean {
   return (PASSTHROUGH_TAGS as readonly string[]).includes(tag);
 }
 
+/** Info about an annotation that was skipped due to overlap. */
+export interface SkippedOverlap {
+  tag: string;
+  line: number;
+}
+
+/** Result of assembleNewVersion, including assembled text and any skipped overlaps. */
+export interface AssemblyResult {
+  content: string;
+  skippedOverlaps: SkippedOverlap[];
+}
+
 /**
  * Assemble a new version of the chapter by applying revisions.
  *
@@ -44,32 +56,37 @@ export function assembleNewVersion(
   // don't shift line numbers for earlier entries.
   const sorted = [...revisions].sort((a, b) => b.annotation.lineStart - a.annotation.lineStart);
 
-  // Merge overlapping ranges: iterate sorted (descending) and merge when ranges overlap
-  const merged: typeof sorted = [];
+  // Handle overlapping ranges: keep the annotation with the larger scope (more
+  // lines) and skip the smaller one. Skipped annotations are recorded in a
+  // flags list so the review notes can report them.
+  const resolved: typeof sorted = [];
+  const skippedOverlaps: Array<{ tag: string; line: number }> = [];
   for (const rev of sorted) {
-    if (merged.length === 0) {
-      merged.push(rev);
+    if (resolved.length === 0) {
+      resolved.push(rev);
       continue;
     }
-    const prev = merged[merged.length - 1];
+    const prev = resolved[resolved.length - 1];
     // Since sorted descending by lineStart, prev.lineStart >= rev.lineStart
     // Overlap: prev.lineStart <= rev.lineEnd (prev starts before rev ends)
     if (prev.annotation.lineStart <= rev.annotation.lineEnd) {
-      // Merge: union of both ranges, concatenate revised text and instructions
-      const mergedAnnotation = {
-        ...rev.annotation,
-        lineStart: Math.min(rev.annotation.lineStart, prev.annotation.lineStart),
-        lineEnd: Math.max(rev.annotation.lineEnd, prev.annotation.lineEnd),
-        instruction: rev.annotation.instruction + " | " + prev.annotation.instruction,
-      };
-      const mergedText = rev.revisedText + "\n\n" + prev.revisedText;
-      merged[merged.length - 1] = { annotation: mergedAnnotation, revisedText: mergedText };
+      // Keep the annotation with the larger scope; skip the smaller one
+      const prevSpan = prev.annotation.lineEnd - prev.annotation.lineStart;
+      const revSpan = rev.annotation.lineEnd - rev.annotation.lineStart;
+      if (revSpan > prevSpan) {
+        // The new (larger) one replaces the previous (smaller) one
+        skippedOverlaps.push({ tag: prev.annotation.tag, line: prev.annotation.lineStart });
+        resolved[resolved.length - 1] = rev;
+      } else {
+        // Keep previous, skip current
+        skippedOverlaps.push({ tag: rev.annotation.tag, line: rev.annotation.lineStart });
+      }
     } else {
-      merged.push(rev);
+      resolved.push(rev);
     }
   }
 
-  for (const { annotation, revisedText } of merged) {
+  for (const { annotation, revisedText } of resolved) {
     // Skip passthrough tags -- they should never appear in revisions, but
     // guard just in case.
     if (isPassthrough(annotation.tag)) continue;

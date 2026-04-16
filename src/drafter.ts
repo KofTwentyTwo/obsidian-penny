@@ -8,7 +8,7 @@
  */
 
 import type { AssembledContext, AnnotatedSection } from "./types";
-import type { LLMService, CompletionRequest, CompletionResponse } from "./providers/service";
+import type { CompletionRequest, CompletionResponse } from "./providers/service";
 
 /**
  * All placeholders that can appear in the system prompt template.
@@ -89,19 +89,27 @@ export function buildPrompt(
 }
 
 /**
+ * Minimal provider interface accepted by callProvider. Matches
+ * PipelineProvider from pipeline.ts -- only the complete() method is needed.
+ */
+interface CallableProvider {
+  complete(request: CompletionRequest): Promise<CompletionResponse>;
+}
+
+/**
  * Send a completion request through the given LLM provider.
  *
  * The provider already has the HTTP function injected at construction time
  * (via the registry), so callers just need to pass the request with the
  * appropriate API key and endpoint from settings.
  *
- * @param provider  The LLM service implementation (Anthropic, Ollama, etc.)
+ * @param provider  Any object with a complete() method (LLMService, PipelineProvider, etc.)
  * @param request   The completion request (systemPrompt, userPrompt, model, maxTokens,
  *                  plus optional apiKey and endpoint for the provider).
  * @returns         The provider's response including the generated text.
  */
 export async function callProvider(
-  provider: LLMService,
+  provider: CallableProvider,
   request: CompletionRequest,
 ): Promise<CompletionResponse> {
   return provider.complete(request);

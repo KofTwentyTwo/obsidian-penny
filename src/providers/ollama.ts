@@ -21,7 +21,12 @@ import type {
 
 const DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434";
 
-/** Token estimation multiplier: ~1.0 tokens per word for most local models. */
+/**
+ * Token estimation multiplier: ~1.0 tokens per word for most local models.
+ *
+ * Ollama models are fetched dynamically via /api/tags, so there is no
+ * hardcoded model catalog here (unlike the Anthropic provider).
+ */
 const TOKEN_MULTIPLIER = 1.0;
 
 export class OllamaProvider implements LLMService {

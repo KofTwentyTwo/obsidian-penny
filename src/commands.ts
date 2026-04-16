@@ -22,6 +22,13 @@ import { generateStateJson } from "./migrate";
 import { findProjectConfig } from "./project-config";
 
 /**
+ * Normalize a settings path by stripping trailing slashes.
+ */
+function normalizePath(p: string): string {
+  return p.replace(/\/+$/, "");
+}
+
+/**
  * Register all PENNY commands with the Obsidian command palette.
  *
  * @param plugin - The PENNY plugin instance
@@ -223,7 +230,7 @@ function isChapterFile(file: TFile, plugin: PennyPlugin): boolean {
  */
 function getAnnotatedChapters(plugin: PennyPlugin): TFile[] {
   const allFiles = plugin.app.vault.getMarkdownFiles();
-  const draftsFolder = plugin.settings.draftsFolder;
+  const draftsFolder = normalizePath(plugin.settings.draftsFolder);
 
   return allFiles.filter((f) => {
     if (!f.path.startsWith(draftsFolder + "/")) return false;
@@ -287,6 +294,11 @@ async function gatherContextFiles(
 ): Promise<ContextFiles> {
   const s = plugin.settings;
 
+  // Normalize all folder/file paths to strip trailing slashes
+  const plotOutlinesFolder = normalizePath(s.plotOutlinesFolder);
+  const characterSheetsFolder = normalizePath(s.characterSheetsFolder);
+  const wikiFolder = normalizePath(s.wikiFolder);
+
   // Read voice tests and pre-filter by detected characters
   let voiceTests = await safeRead(plugin, s.voiceTests);
   if (voiceTests && characters.length > 0) {
@@ -298,18 +310,18 @@ async function gatherContextFiles(
   // Read book-specific outline: {plotOutlinesFolder}/{bookId}/outline.md
   // Fall back to reading plotOutlinesFolder as a file path (user may have set a direct file)
   let outline = "";
-  if (s.plotOutlinesFolder) {
-    const bookOutlinePath = `${s.plotOutlinesFolder}/${bookId}/outline.md`;
+  if (plotOutlinesFolder) {
+    const bookOutlinePath = `${plotOutlinesFolder}/${bookId}/outline.md`;
     outline = await safeRead(plugin, bookOutlinePath);
     if (!outline) {
-      outline = await safeRead(plugin, s.plotOutlinesFolder);
+      outline = await safeRead(plugin, plotOutlinesFolder);
     }
   }
 
   const seriesBible = await safeRead(plugin, s.seriesBible);
   const themes = await safeRead(plugin, s.themesFile);
-  const characterFiles = await readFolderFiles(plugin, s.characterSheetsFolder);
-  const wikiFiles = await readFolderFiles(plugin, s.wikiFolder);
+  const characterFiles = await readFolderFiles(plugin, characterSheetsFolder);
+  const wikiFiles = await readFolderFiles(plugin, wikiFolder);
 
   return {
     chapter: chapterContent,
@@ -363,8 +375,19 @@ function bookIdFromFile(file: TFile): string {
 export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
   plugin.processingFiles.add(file.path);
 
+  // Paths of files we create during processing -- added to processingFiles
+  // BEFORE vault.create to prevent the auto-save hook from picking them up.
+  const createdPaths: string[] = [];
+
   try {
-  const content = await plugin.app.vault.read(file);
+  let content: string;
+  try {
+    content = await plugin.app.vault.read(file);
+  } catch (readErr) {
+    const msg = readErr instanceof Error ? readErr.message : String(readErr);
+    new Notice(`PENNY: Failed to read ${file.basename} -- ${msg}`);
+    return;
+  }
 
   // Quick check: any actionable annotations at all?
   const allAnnotations = parseAnnotations(content);
@@ -385,9 +408,17 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
       s = { ...s, ...projectOverrides };
     }
 
+    // Normalize folder paths from settings
+    const reviewsFolder = normalizePath(s.reviewsFolder);
+    const activityLogFolder = normalizePath(s.activityLogFolder);
+
     const folderPath = chapterFolderPath(file);
     const chapterId = chapterIdFromFile(file);
     const bookId = bookIdFromFile(file);
+
+    if (s.verboseLogging) {
+      console.log(`[PENNY] Processing ${file.path} (chapter: ${chapterId}, book: ${bookId})`);
+    }
 
     // Read version and state files
     const versionContent = await safeRead(plugin, `${folderPath}/.version`);
@@ -401,6 +432,10 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
     // Gather context files from vault
     const contextFiles = await gatherContextFiles(plugin, content, detectedChars, bookId);
 
+    if (s.verboseLogging) {
+      console.log(`[PENNY] Annotations found: ${actionableCount} actionable`);
+    }
+
     // Run the pipeline
     const result = await runPipeline({
       content,
@@ -410,7 +445,12 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
       settings: s,
       chapterId,
       bookId,
-      getProvider: (name: string) => plugin.providerRegistry.get(name),
+      getProvider: (name: string) => {
+        if (s.verboseLogging) {
+          console.log(`[PENNY] Provider requested: ${name}`);
+        }
+        return plugin.providerRegistry.get(name);
+      },
     });
 
     if (!result) {
@@ -418,34 +458,49 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
       return;
     }
 
-    // Write new version file
+    if (s.verboseLogging) {
+      console.log(`[PENNY] Pipeline complete: ${result.annotationsProcessed} processed, v${result.newVersion} (${result.durationMs}ms)`);
+    }
+
+    // Compute all paths we are about to create BEFORE writing them,
+    // so the auto-save hook does not pick them up.
     const newVersionPath = `${folderPath}/${chapterId}.v${result.newVersion}.md`;
+    const versionFilePath = `${folderPath}/.version`;
+    const stateFilePath = `${folderPath}/.state.json`;
+
+    const newPaths = [newVersionPath, versionFilePath, stateFilePath];
+    for (const p of newPaths) {
+      plugin.processingFiles.add(p);
+      createdPaths.push(p);
+    }
+
+    // Write new version file
     await plugin.app.vault.create(newVersionPath, result.newContent);
 
     // Update .version file
-    const versionFile = plugin.app.vault.getAbstractFileByPath(`${folderPath}/.version`);
+    const versionFile = plugin.app.vault.getAbstractFileByPath(versionFilePath);
     if (versionFile && versionFile instanceof TFile) {
       await plugin.app.vault.modify(versionFile, String(result.newVersion));
     } else {
-      await plugin.app.vault.create(`${folderPath}/.version`, String(result.newVersion));
+      await plugin.app.vault.create(versionFilePath, String(result.newVersion));
     }
 
     // Update .state.json
-    const stateFile = plugin.app.vault.getAbstractFileByPath(`${folderPath}/.state.json`);
+    const stateFile = plugin.app.vault.getAbstractFileByPath(stateFilePath);
     if (stateFile && stateFile instanceof TFile) {
       await plugin.app.vault.modify(stateFile, result.stateJson);
     } else {
-      await plugin.app.vault.create(`${folderPath}/.state.json`, result.stateJson);
+      await plugin.app.vault.create(stateFilePath, result.stateJson);
     }
 
     // Write review note
-    const reviewPath = getReviewFilePath(s.reviewsFolder, bookId, chapterId, result.newVersion);
+    const reviewPath = getReviewFilePath(reviewsFolder, bookId, chapterId, result.newVersion);
     const reviewFolder = reviewPath.split("/").slice(0, -1).join("/");
     await ensureFolder(plugin, reviewFolder);
     await plugin.app.vault.create(reviewPath, result.reviewContent);
 
     // Append to activity log
-    const logPath = getLogFilePath(s.activityLogFolder, bookId);
+    const logPath = getLogFilePath(activityLogFolder, bookId);
     const logFolder = logPath.split("/").slice(0, -1).join("/");
     await ensureFolder(plugin, logFolder);
     const existingLog = plugin.app.vault.getAbstractFileByPath(logPath);
@@ -454,6 +509,10 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
       await plugin.app.vault.modify(existingLog, existing + result.logLine);
     } else {
       await plugin.app.vault.create(logPath, result.logLine);
+    }
+
+    if (s.verboseLogging) {
+      console.log(`[PENNY] Version ${result.newVersion} created for ${chapterId}`);
     }
 
     // Show completion notice
@@ -466,7 +525,11 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
 
     // Auto-commit if enabled
     if (s.autoCommitAfterProcessing) {
-      await gitCommit(plugin);
+      await gitCommit(plugin, {
+        chapter: chapterId,
+        version: String(result.newVersion),
+        tags: result.tags.join(", "),
+      });
       if (s.autoPushAfterCommit) {
         await gitPush(plugin);
       }
@@ -483,6 +546,10 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
   }
   } finally {
     plugin.processingFiles.delete(file.path);
+    // Clean up all created file paths from the processing guard
+    for (const p of createdPaths) {
+      plugin.processingFiles.delete(p);
+    }
   }
 }
 
@@ -555,7 +622,7 @@ async function showStatus(plugin: PennyPlugin, file: TFile): Promise<void> {
  * Migrate flat chapter files to versioned folder structure.
  */
 async function migrateChapters(plugin: PennyPlugin): Promise<void> {
-  const draftsFolder = plugin.settings.draftsFolder;
+  const draftsFolder = normalizePath(plugin.settings.draftsFolder);
   const abstractFile = plugin.app.vault.getAbstractFileByPath(draftsFolder);
 
   if (!abstractFile || !(abstractFile instanceof TFolder)) {
@@ -649,14 +716,16 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
  */
 async function createNewChapter(plugin: PennyPlugin): Promise<void> {
   const activeFile = plugin.app.workspace.getActiveFile();
-  const draftsFolder = plugin.settings.draftsFolder;
+  const draftsFolder = normalizePath(plugin.settings.draftsFolder);
 
-  // Try to infer the book folder from the active file
+  // Try to infer the book folder from the active file.
+  // Compute depth dynamically so multi-segment draftsFolder paths work correctly.
   let bookFolderPath: string | null = null;
   if (activeFile && activeFile.path.startsWith(draftsFolder + "/")) {
     const parts = activeFile.path.split("/");
-    if (parts.length >= 2) {
-      bookFolderPath = parts.slice(0, 2).join("/");
+    const draftsParts = draftsFolder.split("/").length;
+    if (parts.length > draftsParts) {
+      bookFolderPath = parts.slice(0, draftsParts + 1).join("/");
     }
   }
 
@@ -874,10 +943,20 @@ function gitExecRaw(args: string[]): Promise<string> {
   });
 }
 
+/** Optional processing result info for building formatted commit messages. */
+interface CommitContext {
+  chapter?: string;
+  version?: string;
+  tags?: string;
+}
+
 /**
  * Stage and commit changes with an auto-generated message.
+ *
+ * When called with a CommitContext (after processing), uses the user's
+ * commitMessageFormat template. Otherwise builds a message from changed files.
  */
-async function gitCommit(plugin: PennyPlugin): Promise<void> {
+async function gitCommit(plugin: PennyPlugin, ctx?: CommitContext): Promise<void> {
   const vaultPath = await verifyGitPrerequisites(plugin);
   if (!vaultPath) return;
 
@@ -916,9 +995,18 @@ async function gitCommit(plugin: PennyPlugin): Promise<void> {
       }
     }
 
-    let message = "docs: PENNY writing session";
-    if (chapterChanges.length > 0) {
+    // Use commitMessageFormat template when we have processing context
+    let message: string;
+    const fmt = plugin.settings.commitMessageFormat;
+    if (ctx && fmt) {
+      message = fmt
+        .replace(/\{chapter\}/g, ctx.chapter ?? chapterChanges.join(", ") ?? "unknown")
+        .replace(/\{version\}/g, ctx.version ?? "?")
+        .replace(/\{tags\}/g, ctx.tags ?? "");
+    } else if (chapterChanges.length > 0) {
       message = `docs: revise ${chapterChanges.join(", ")}`;
+    } else {
+      message = "docs: PENNY writing session";
     }
 
     const bodyParts: string[] = [];

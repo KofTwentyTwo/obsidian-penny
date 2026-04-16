@@ -104,7 +104,7 @@ describe("AnthropicProvider", () => {
       const { fn, calls } = mockHttp({ text: responseText });
       const provider = new AnthropicProvider(fn);
 
-      await provider.complete(makeRequest());
+      await provider.complete(makeRequest({ useThinking: true }));
 
       expect(calls).toHaveLength(1);
       const body = JSON.parse(calls[0].body!);
@@ -119,36 +119,58 @@ describe("AnthropicProvider", () => {
       expect(body.messages[0].content).toBe("Rewrite this passage with more tension.");
     });
 
-    it("includes thinking for opus-4-6", async () => {
+    it("includes thinking for opus-4-6 when useThinking is true", async () => {
       const responseText = anthropicResponse("OK");
       const { fn, calls } = mockHttp({ text: responseText });
       const provider = new AnthropicProvider(fn);
 
-      await provider.complete(makeRequest({ model: "claude-opus-4-6" }));
+      await provider.complete(makeRequest({ model: "claude-opus-4-6", useThinking: true }));
 
       const body = JSON.parse(calls[0].body!);
       expect(body.thinking).toBeDefined();
       expect(body.thinking.type).toBe("enabled");
     });
 
-    it("includes thinking for sonnet-4-6", async () => {
+    it("includes thinking for sonnet-4-6 when useThinking is true", async () => {
+      const responseText = anthropicResponse("OK");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      await provider.complete(makeRequest({ model: "claude-sonnet-4-6", useThinking: true }));
+
+      const body = JSON.parse(calls[0].body!);
+      expect(body.thinking).toBeDefined();
+      expect(body.thinking.type).toBe("enabled");
+    });
+
+    it("does NOT include thinking for haiku-4-5 even when useThinking is true", async () => {
+      const responseText = anthropicResponse("OK");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      await provider.complete(makeRequest({ model: "claude-haiku-4-5", useThinking: true }));
+
+      const body = JSON.parse(calls[0].body!);
+      expect(body.thinking).toBeUndefined();
+    });
+
+    it("does NOT include thinking when useThinking is false even for capable models", async () => {
+      const responseText = anthropicResponse("OK");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      await provider.complete(makeRequest({ model: "claude-opus-4-6", useThinking: false }));
+
+      const body = JSON.parse(calls[0].body!);
+      expect(body.thinking).toBeUndefined();
+    });
+
+    it("does NOT include thinking when useThinking is omitted", async () => {
       const responseText = anthropicResponse("OK");
       const { fn, calls } = mockHttp({ text: responseText });
       const provider = new AnthropicProvider(fn);
 
       await provider.complete(makeRequest({ model: "claude-sonnet-4-6" }));
-
-      const body = JSON.parse(calls[0].body!);
-      expect(body.thinking).toBeDefined();
-      expect(body.thinking.type).toBe("enabled");
-    });
-
-    it("does NOT include thinking for haiku-4-5", async () => {
-      const responseText = anthropicResponse("OK");
-      const { fn, calls } = mockHttp({ text: responseText });
-      const provider = new AnthropicProvider(fn);
-
-      await provider.complete(makeRequest({ model: "claude-haiku-4-5" }));
 
       const body = JSON.parse(calls[0].body!);
       expect(body.thinking).toBeUndefined();

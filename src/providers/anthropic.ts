@@ -21,8 +21,14 @@ const ANTHROPIC_VERSION = "2023-06-01";
 /** Models that support the extended thinking feature. */
 const THINKING_CAPABLE = new Set(["claude-opus-4-6", "claude-sonnet-4-6"]);
 
-/** Static model catalog for Anthropic. */
-const ANTHROPIC_MODELS: ModelInfo[] = [
+/**
+ * Static model catalog for Anthropic.
+ *
+ * Intentionally hardcoded for offline/static use. The settings dropdown also
+ * supports free-text input (via Ollama rows), so users are not locked to
+ * this list. Update manually when Anthropic ships new model aliases.
+ */
+export const ANTHROPIC_MODELS: ModelInfo[] = [
   {
     id: "claude-opus-4-6",
     name: "Claude Opus 4.6",
@@ -74,7 +80,7 @@ export class AnthropicProvider implements LLMService {
       ],
     };
 
-    if (THINKING_CAPABLE.has(request.model)) {
+    if (request.useThinking === true && THINKING_CAPABLE.has(request.model)) {
       body.thinking = { type: "enabled", budget_tokens: Math.min(10000, Math.floor(request.maxTokens * 0.5)) };
     }
 

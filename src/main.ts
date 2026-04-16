@@ -110,8 +110,9 @@ export default class PennyPlugin extends Plugin {
       this.statusBar.update(activeFile, this);
     }
 
-    // First-run notice if no provider is configured
-    if (!this.settings.anthropicApiKey && !this.settings.ollamaEndpoint) {
+    // First-run notice if no provider is configured.
+    // ollamaEndpoint always has a default value, so only check the API key.
+    if (!this.settings.anthropicApiKey) {
       new Notice(
         "PENNY loaded. Configure an LLM provider in Settings > PENNY to get started.",
         8000

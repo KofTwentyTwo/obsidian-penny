@@ -60,6 +60,8 @@ export interface CompletionRequest {
   maxTokens: number;
   apiKey?: string;
   endpoint?: string;
+  /** When true AND the model supports it, enable extended thinking. */
+  useThinking?: boolean;
 }
 
 /** Response from an LLM provider. */

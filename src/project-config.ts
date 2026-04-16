@@ -120,7 +120,7 @@ export function parseProjectConfig(content: string): Partial<PennySettings> {
 
   // Also parse voice rules section
   let inVoiceSection = false;
-  const voiceLines: string[] = [];
+  const voiceSection: string[] = [];
 
   for (const line of lines) {
     if (/^##\s+/.test(line)) {
@@ -128,11 +128,20 @@ export function parseProjectConfig(content: string): Partial<PennySettings> {
       continue;
     }
     if (inVoiceSection) {
-      // Stop at HTML comments (template placeholders)
-      if (line.trim().startsWith("<!--")) continue;
-      if (line.trim().endsWith("-->")) continue;
-      voiceLines.push(line);
+      voiceSection.push(line);
     }
+  }
+
+  // Filter out multi-line HTML comments from the voice section
+  const voiceLines: string[] = [];
+  let inComment = false;
+  for (const line of voiceSection) {
+    if (line.trim().startsWith("<!--")) inComment = true;
+    if (inComment) {
+      if (line.trim().endsWith("-->")) inComment = false;
+      continue;
+    }
+    voiceLines.push(line);
   }
 
   const voiceRulesText = voiceLines.join("\n").trim();

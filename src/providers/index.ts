@@ -33,7 +33,7 @@ export type {
 export { ProviderRegistry } from "./registry";
 
 // Provider implementations
-export { AnthropicProvider } from "./anthropic";
+export { AnthropicProvider, ANTHROPIC_MODELS } from "./anthropic";
 export { OllamaProvider } from "./ollama";
 
 // -- Convenience factory --

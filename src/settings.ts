@@ -8,6 +8,7 @@
 import { PluginSettingTab, Setting, App, Notice } from "obsidian";
 import type PennyPlugin from "./main";
 import { DEFAULT_SYSTEM_PROMPT } from "./types";
+import { ANTHROPIC_MODELS } from "./providers/anthropic";
 
 /**
  * Settings tab for the PENNY plugin.
@@ -264,11 +265,7 @@ export class PennySettingTab extends PluginSettingTab {
   ): void {
     const route = this.plugin.settings[routeKey];
 
-    const anthropicModels: Array<{ id: string; name: string }> = [
-      { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
-      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-      { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
-    ];
+    const anthropicModels = ANTHROPIC_MODELS.map((m) => ({ id: m.id, name: m.name }));
 
     const setting = new Setting(container).setName(label);
 
