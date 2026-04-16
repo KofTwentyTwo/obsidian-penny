@@ -27,19 +27,22 @@ const THINKING_CAPABLE = new Set(["claude-opus-4-6", "claude-sonnet-4-6"]);
  * Intentionally hardcoded for offline/static use. The settings dropdown also
  * supports free-text input (via Ollama rows), so users are not locked to
  * this list. Update manually when Anthropic ships new model aliases.
+ *
+ * Context windows current as of April 2026. Opus 4.6 and Sonnet 4.6 support
+ * 1M context in beta; Haiku 4.5 remains at 200k.
  */
 export const ANTHROPIC_MODELS: ModelInfo[] = [
   {
     id: "claude-opus-4-6",
     name: "Claude Opus 4.6",
-    contextWindow: 200000,
+    contextWindow: 1000000,
     costPer1kInput: 0.015,
     costPer1kOutput: 0.075,
   },
   {
     id: "claude-sonnet-4-6",
     name: "Claude Sonnet 4.6",
-    contextWindow: 200000,
+    contextWindow: 1000000,
     costPer1kInput: 0.003,
     costPer1kOutput: 0.015,
   },
@@ -82,18 +85,26 @@ export class AnthropicProvider implements LLMService {
 
     // Use adaptive thinking (recommended for Claude 4.6+).
     // budget_tokens is deprecated on Opus 4.6 and Sonnet 4.6.
-    if (request.useThinking === true && THINKING_CAPABLE.has(request.model)) {
+    const useThinking = request.useThinking === true && THINKING_CAPABLE.has(request.model);
+    if (useThinking) {
       body.thinking = { type: "adaptive" };
+    }
+
+    const headers: Record<string, string> = {
+      "x-api-key": apiKey,
+      "anthropic-version": ANTHROPIC_VERSION,
+      "content-type": "application/json",
+    };
+
+    // Add the interleaved-thinking beta header when thinking is enabled
+    if (useThinking) {
+      headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
     }
 
     const response = await this.httpFn({
       url: ANTHROPIC_API_URL,
       method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": ANTHROPIC_VERSION,
-        "content-type": "application/json",
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

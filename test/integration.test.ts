@@ -495,6 +495,98 @@ She walked in.
     expect(calls[0].maxTokens).toBe(8000);
   });
 
+  it("returns null when cancelled before any annotation is processed", async () => {
+    const mock = createMockProvider([
+      "Should never be used.",
+      "Also should never be used.",
+    ]);
+
+    const input: PipelineInput = {
+      content: TEST_CHAPTER,
+      versionContent: "1",
+      stateContent: "",
+      contextFiles: makeContextFiles(TEST_CHAPTER),
+      settings: TEST_SETTINGS,
+      chapterId: "ch-05",
+      bookId: "book-1",
+      getProvider: () => mock.provider,
+      isCancelled: () => true, // Cancelled from the start
+    };
+
+    const result = await runPipeline(input);
+
+    // Should return null -- cancelled before any work
+    expect(result).toBeNull();
+    // Provider should never be called
+    expect(mock.getCalls()).toHaveLength(0);
+  });
+
+  it("returns null when cancelled after first annotation (no partial version)", async () => {
+    let callCount = 0;
+    const mock = createMockProvider([
+      "Revised first passage.",
+      "Revised second passage.",
+    ]);
+
+    // Cancel after the first annotation completes
+    const input: PipelineInput = {
+      content: TEST_CHAPTER,
+      versionContent: "1",
+      stateContent: "",
+      contextFiles: makeContextFiles(TEST_CHAPTER),
+      settings: TEST_SETTINGS,
+      chapterId: "ch-05",
+      bookId: "book-1",
+      getProvider: () => {
+        callCount++;
+        return mock.provider;
+      },
+      isCancelled: () => callCount >= 1, // Cancel after first annotation starts
+    };
+
+    const result = await runPipeline(input);
+
+    // Should return null -- cancelled run must not produce a version
+    expect(result).toBeNull();
+  });
+
+  it("emits a complete event with Cancelled message when cancelled mid-run", async () => {
+    let callCount = 0;
+    const progressEvents: Array<{ type: string; message?: string }> = [];
+    const mock = createMockProvider([
+      "Revised first passage.",
+      "Revised second passage.",
+    ]);
+
+    const input: PipelineInput = {
+      content: TEST_CHAPTER,
+      versionContent: "1",
+      stateContent: "",
+      contextFiles: makeContextFiles(TEST_CHAPTER),
+      settings: TEST_SETTINGS,
+      chapterId: "ch-05",
+      bookId: "book-1",
+      getProvider: () => mock.provider,
+      onProgress: (event) => {
+        progressEvents.push({ type: event.type, message: event.message });
+      },
+      isCancelled: () => {
+        // Cancel after at least one provider call has been made
+        return mock.getCalls().length >= 1;
+      },
+    };
+
+    const result = await runPipeline(input);
+
+    // Should return null
+    expect(result).toBeNull();
+
+    // Should have emitted a complete event with "Cancelled" in the message
+    const completeEvents = progressEvents.filter((e) => e.type === "complete");
+    expect(completeEvents.length).toBeGreaterThanOrEqual(1);
+    expect(completeEvents.some((e) => e.message?.includes("Cancelled"))).toBe(true);
+  });
+
   it("works with empty customVoiceRules", async () => {
     const mock = createMockProvider(["Revised passage."]);
 

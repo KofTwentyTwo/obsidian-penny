@@ -837,15 +837,31 @@ export class PennySettingTab extends PluginSettingTab {
         `PENNY: Detected ${detectedCount} path(s):\n${detected.join("\n")}`,
         8000,
       );
-      // Don't call this.display() here -- it closes the section.
-      // Settings are saved; user sees the detected paths in the Notice.
-      // They can collapse/reopen the section to see updated values.
+      this.redisplayPreservingState();
     } else {
       new Notice(
         "PENNY: No project structure detected, or all paths are already configured.",
         6000,
       );
     }
+  }
+
+  /**
+   * Re-render the settings UI while preserving the open/closed state of
+   * all `<details>` sections so the user doesn't lose their place.
+   */
+  private redisplayPreservingState(): void {
+    const { containerEl } = this;
+    const openStates: boolean[] = [];
+    containerEl.querySelectorAll("details").forEach((d) => {
+      openStates.push(d.open);
+    });
+
+    this.display();
+
+    containerEl.querySelectorAll("details").forEach((d, i) => {
+      if (i < openStates.length) d.open = openStates[i];
+    });
   }
 
   /**

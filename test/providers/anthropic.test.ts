@@ -92,7 +92,7 @@ describe("AnthropicProvider", () => {
 
       const opus = models.find((m) => m.id === "claude-opus-4-6");
       expect(opus).toBeDefined();
-      expect(opus!.contextWindow).toBe(200000);
+      expect(opus!.contextWindow).toBe(1000000);
       expect(opus!.costPer1kInput).toBeGreaterThan(0);
       expect(opus!.costPer1kOutput).toBeGreaterThan(0);
     });

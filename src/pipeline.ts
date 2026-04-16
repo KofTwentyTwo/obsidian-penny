@@ -61,6 +61,8 @@ export interface PipelineInput {
   onProgress?: (event: ProgressEvent) => void;
   /** Optional cancellation check; return true to abort the pipeline loop. */
   isCancelled?: () => boolean;
+  /** Pre-parsed annotations to avoid redundant parseAnnotations call. */
+  preParsedAnnotations?: AnnotatedSection[];
 }
 
 export interface PipelineResult {
@@ -116,8 +118,8 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
   const { content, settings, chapterId, bookId } = input;
   const onProgress = input.onProgress;
 
-  // (a) Parse annotations
-  const allAnnotations = parseAnnotations(content);
+  // (a) Parse annotations (use pre-parsed if provided to avoid redundant work)
+  const allAnnotations = input.preParsedAnnotations ?? parseAnnotations(content);
 
   // (b) Read version and state
   const currentVersion = readVersion(input.versionContent);
@@ -293,6 +295,11 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         message: `[${i + 1}/${toProcess.length}] ${annotation.tag} line ${annotation.lineStart} ... ERROR: ${errMsg}`,
       });
     }
+  }
+
+  // Check if cancelled before proceeding to assembly
+  if (input.isCancelled?.()) {
+    return null; // Don't create a version from a cancelled run
   }
 
   // (f) Assemble new version

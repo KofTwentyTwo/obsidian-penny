@@ -121,7 +121,7 @@ function resolveScope(
     return { scope: "paragraph", lineStart: annotationLineIndex, lineEnd: annotationLineIndex };
   }
   let paraStart = above;
-  while (paraStart > 0 && !isBlank(lines[paraStart - 1]) && !isHeading(lines[paraStart - 1])) {
+  while (paraStart > 0 && !isBlank(lines[paraStart - 1]) && !isHeading(lines[paraStart - 1]) && !lines[paraStart - 1].trim().startsWith("%% REVISED(")) {
     paraStart--;
   }
   return { scope: "paragraph", lineStart: paraStart, lineEnd: annotationLineIndex };

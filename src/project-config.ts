@@ -146,7 +146,12 @@ export function parseProjectConfig(content: string): Partial<PennySettings> {
     voiceLines.push(line);
   }
 
-  const voiceRulesText = voiceLines.join("\n").trim();
+  // Strip inline HTML comments that weren't caught by the multi-line filter
+  const cleaned = voiceLines.map(line =>
+    line.replace(/<!--[\s\S]*?-->/g, "").trim()
+  ).filter(line => line.length > 0);
+
+  const voiceRulesText = cleaned.join("\n").trim();
   if (voiceRulesText) {
     overrides.customVoiceRules = voiceRulesText;
   }

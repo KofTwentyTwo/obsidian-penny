@@ -72,7 +72,13 @@ export function registerCommands(plugin: PennyPlugin): void {
         return;
       }
 
-      new Notice(`PENNY: Processing ${chapters.length} chapter(s)...`);
+      // Quick scan to count how many chapters actually have annotations
+      let annotatedCount = 0;
+      for (const f of chapters) {
+        const text = await plugin.app.vault.cachedRead(f);
+        if (text.includes("%%") && text.match(/%% \w+:/)) annotatedCount++;
+      }
+      new Notice(`PENNY: Found ${annotatedCount} chapter(s) with annotations (${chapters.length} total).`);
       let processedCount = 0;
       let totalAnnotations = 0;
       let skippedCount = 0;
@@ -499,7 +505,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       modal.open();
     }
 
-    // Run the pipeline
+    // Run the pipeline (pass pre-parsed annotations to avoid redundant parsing)
     const result = await runPipeline({
       content,
       versionContent: effectiveVersionContent,
@@ -508,6 +514,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       settings: s,
       chapterId,
       bookId,
+      preParsedAnnotations: allAnnotations,
       getProvider: (name: string) => {
         if (s.verboseLogging) {
           console.log(`[PENNY] Provider requested: ${name}`);
