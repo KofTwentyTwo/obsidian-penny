@@ -1,0 +1,10 @@
+{
+  "id": "penny",
+  "name": "PENNY - Prose Co-Author",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "AI-powered prose revision agent that processes editorial annotations and enforces voice consistency. Uses Claude API.",
+  "author": "James Maes",
+  "authorUrl": "https://github.com/KofTwentyTwo",
+  "isDesktopOnly": true
+}
