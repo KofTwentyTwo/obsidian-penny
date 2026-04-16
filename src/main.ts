@@ -11,7 +11,7 @@
 import { Plugin, Notice, TFile, requestUrl } from "obsidian";
 import { PennySettingTab } from "./settings";
 import { PennyStatusBar } from "./statusbar";
-import { registerCommands } from "./commands";
+import { registerCommands, processChapter } from "./commands";
 import { DEFAULT_SETTINGS, migrateSettings } from "./types";
 import { createRegistry } from "./providers";
 import { globMatch } from "./utils";
@@ -186,7 +186,7 @@ export default class PennyPlugin extends Plugin {
         this.debounceTimers.delete(file.path);
         // Double-check the file is still not being processed
         if (!this.processingFiles.has(file.path)) {
-          executeCommand(this.app, "penny:process-chapter");
+          processChapter(this, file);
         }
       }, 2000);
 

@@ -47,7 +47,16 @@ export class OllamaProvider implements LLMService {
         throw this.buildHttpError(response.status, response.text, endpoint);
       }
 
-      const data = JSON.parse(response.text);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any;
+      try {
+        data = JSON.parse(response.text);
+      } catch (err) {
+        if (err instanceof SyntaxError) {
+          throw new Error("Ollama API returned malformed response: " + response.text.slice(0, 200));
+        }
+        throw err;
+      }
       if (data && Array.isArray(data.models)) {
         return data.models.map((m: Record<string, unknown>) => ({
           id: String(m.name ?? m.model ?? "unknown"),
@@ -169,7 +178,16 @@ export class OllamaProvider implements LLMService {
    * ```
    */
   private parseResponse(responseText: string, model: string): CompletionResponse {
-    const data = JSON.parse(responseText);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        throw new Error("Ollama API returned malformed response: " + responseText.slice(0, 200));
+      }
+      throw err;
+    }
 
     let text = "";
     if (data && Array.isArray(data.choices) && data.choices.length > 0) {

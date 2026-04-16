@@ -24,6 +24,7 @@ export interface PennySettings {
 
   // Context
   contextBudget: number;
+  maxTokens: number;
 
   // Project structure (paths relative to vault root)
   draftsFolder: string;
@@ -131,6 +132,7 @@ export const DEFAULT_SETTINGS: PennySettings = {
   useSameModelForAll: true,
 
   contextBudget: 800000,
+  maxTokens: 16000,
 
   draftsFolder: "04-drafts",
   styleGuide: "",

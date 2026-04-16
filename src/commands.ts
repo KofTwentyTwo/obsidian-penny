@@ -8,23 +8,18 @@
 import { FileSystemAdapter, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import { execFile } from "child_process";
 import type PennyPlugin from "./main";
-import type { ProjectInitOptions, PennySettings, AnnotatedSection, AnnotationChange, ReviewFlag } from "./types";
+import type { ProjectInitOptions } from "./types";
 import { parseAnnotations } from "./parser";
-import { assembleContext, selectVoiceTestSection } from "./context";
+import { selectVoiceTestSection } from "./context";
 import type { ContextFiles } from "./context";
-import { buildPrompt, callProvider } from "./drafter";
-import { assembleNewVersion } from "./assembler";
-import { readVersion, nextVersion, readState, updateState, shouldProcess, serializeState } from "./versioner";
-import { parseFrontmatter, serializeFrontmatter, updateAgentFields, countProseWords, detectCharacters } from "./frontmatter";
-import { generateReview, getReviewFilePath } from "./reviewer";
-import { createLogEntry, formatLogEntry, getLogFilePath } from "./logger";
-import { checkVoiceCompliance } from "./voice-check";
-import { getRoute } from "./providers/router";
-import type { RouteConfig } from "./providers/router";
-import type { CompletionRequest } from "./providers/service";
+import { parseFrontmatter, detectCharacters } from "./frontmatter";
+import { getReviewFilePath } from "./reviewer";
+import { getLogFilePath } from "./logger";
 import { runPipeline } from "./pipeline";
-import type { PipelineInput, PipelineResult } from "./pipeline";
+import type { PipelineResult } from "./pipeline";
 import { globMatch } from "./utils";
+import { generateStateJson } from "./migrate";
+import { findProjectConfig } from "./project-config";
 
 /**
  * Register all PENNY commands with the Obsidian command palette.
@@ -244,25 +239,6 @@ function getAnnotatedChapters(plugin: PennyPlugin): TFile[] {
 // ============================================================================
 
 /**
- * Build the RouteConfig from plugin settings.
- * When useSameModelForAll is true, all tiers use the standard route.
- */
-function buildRouteConfig(s: PennySettings): RouteConfig {
-  if (s.useSameModelForAll) {
-    return {
-      light: { ...s.routeStandard },
-      standard: { ...s.routeStandard },
-      heavy: { ...s.routeStandard },
-    };
-  }
-  return {
-    light: { ...s.routeLight },
-    standard: { ...s.routeStandard },
-    heavy: { ...s.routeHeavy },
-  };
-}
-
-/**
  * Safely read a vault file by path. Returns empty string if the file
  * does not exist or cannot be read.
  */
@@ -307,6 +283,7 @@ async function gatherContextFiles(
   plugin: PennyPlugin,
   chapterContent: string,
   characters: string[],
+  bookId: string,
 ): Promise<ContextFiles> {
   const s = plugin.settings;
 
@@ -317,7 +294,18 @@ async function gatherContextFiles(
   }
 
   const styleGuide = await safeRead(plugin, s.styleGuide);
-  const outline = await safeRead(plugin, s.plotOutlinesFolder);
+
+  // Read book-specific outline: {plotOutlinesFolder}/{bookId}/outline.md
+  // Fall back to reading plotOutlinesFolder as a file path (user may have set a direct file)
+  let outline = "";
+  if (s.plotOutlinesFolder) {
+    const bookOutlinePath = `${s.plotOutlinesFolder}/${bookId}/outline.md`;
+    outline = await safeRead(plugin, bookOutlinePath);
+    if (!outline) {
+      outline = await safeRead(plugin, s.plotOutlinesFolder);
+    }
+  }
+
   const seriesBible = await safeRead(plugin, s.seriesBible);
   const themes = await safeRead(plugin, s.themesFile);
   const characterFiles = await readFolderFiles(plugin, s.characterSheetsFolder);
@@ -372,7 +360,10 @@ function bookIdFromFile(file: TFile): string {
  * Process annotations in a single chapter file.
  * Runs the full pipeline: parse -> context -> draft -> assemble -> version.
  */
-async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
+export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
+  plugin.processingFiles.add(file.path);
+
+  try {
   const content = await plugin.app.vault.read(file);
 
   // Quick check: any actionable annotations at all?
@@ -387,7 +378,13 @@ async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
   plugin.statusBar?.setProcessing();
 
   try {
-    const s = plugin.settings;
+    // Merge per-project config overrides from PENNY.md (if present)
+    let s = plugin.settings;
+    const projectOverrides = await findProjectConfig(file.path, plugin.app.vault);
+    if (projectOverrides) {
+      s = { ...s, ...projectOverrides };
+    }
+
     const folderPath = chapterFolderPath(file);
     const chapterId = chapterIdFromFile(file);
     const bookId = bookIdFromFile(file);
@@ -402,7 +399,7 @@ async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
     const detectedChars = detectCharacters(content, focusField);
 
     // Gather context files from vault
-    const contextFiles = await gatherContextFiles(plugin, content, detectedChars);
+    const contextFiles = await gatherContextFiles(plugin, content, detectedChars, bookId);
 
     // Run the pipeline
     const result = await runPipeline({
@@ -483,6 +480,9 @@ async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
     if (activeFile) {
       plugin.statusBar?.update(activeFile, plugin);
     }
+  }
+  } finally {
+    plugin.processingFiles.delete(file.path);
   }
 }
 
@@ -618,6 +618,10 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
         // Write .version manifest
         await plugin.app.vault.create(versionFilePath, "1");
 
+        // Write .state.json
+        const stateFilePath = `${chapterFolderPath}/.state.json`;
+        await plugin.app.vault.create(stateFilePath, generateStateJson());
+
         // Remove original flat file only after verified write
         await plugin.app.vault.delete(bookChild);
 
@@ -691,6 +695,7 @@ async function createNewChapter(plugin: PennyPlugin): Promise<void> {
     await ensureFolder(plugin, chapterFolderPath);
     const newFile = await plugin.app.vault.create(filePath, content);
     await plugin.app.vault.create(`${chapterFolderPath}/.version`, "1");
+    await plugin.app.vault.create(`${chapterFolderPath}/.state.json`, generateStateJson());
 
     // Open the new file
     await plugin.app.workspace.getLeaf("tab").openFile(newFile);
@@ -1344,6 +1349,10 @@ async function scaffoldProject(
       await plugin.app.vault.create(
         `${root}/04-drafts/book-${b}/ch-${padded}/.version`,
         "1"
+      );
+      await plugin.app.vault.create(
+        `${root}/04-drafts/book-${b}/ch-${padded}/.state.json`,
+        generateStateJson()
       );
     }
   }

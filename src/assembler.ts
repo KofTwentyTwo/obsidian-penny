@@ -44,7 +44,32 @@ export function assembleNewVersion(
   // don't shift line numbers for earlier entries.
   const sorted = [...revisions].sort((a, b) => b.annotation.lineStart - a.annotation.lineStart);
 
-  for (const { annotation, revisedText } of sorted) {
+  // Merge overlapping ranges: iterate sorted (descending) and merge when ranges overlap
+  const merged: typeof sorted = [];
+  for (const rev of sorted) {
+    if (merged.length === 0) {
+      merged.push(rev);
+      continue;
+    }
+    const prev = merged[merged.length - 1];
+    // Since sorted descending by lineStart, prev.lineStart >= rev.lineStart
+    // Overlap: prev.lineStart <= rev.lineEnd (prev starts before rev ends)
+    if (prev.annotation.lineStart <= rev.annotation.lineEnd) {
+      // Merge: union of both ranges, concatenate revised text and instructions
+      const mergedAnnotation = {
+        ...rev.annotation,
+        lineStart: Math.min(rev.annotation.lineStart, prev.annotation.lineStart),
+        lineEnd: Math.max(rev.annotation.lineEnd, prev.annotation.lineEnd),
+        instruction: rev.annotation.instruction + " | " + prev.annotation.instruction,
+      };
+      const mergedText = rev.revisedText + "\n\n" + prev.revisedText;
+      merged[merged.length - 1] = { annotation: mergedAnnotation, revisedText: mergedText };
+    } else {
+      merged.push(rev);
+    }
+  }
+
+  for (const { annotation, revisedText } of merged) {
     // Skip passthrough tags -- they should never appear in revisions, but
     // guard just in case.
     if (isPassthrough(annotation.tag)) continue;

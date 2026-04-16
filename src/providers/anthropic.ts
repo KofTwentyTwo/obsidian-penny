@@ -175,7 +175,16 @@ export class AnthropicProvider implements LLMService {
    * ```
    */
   private parseResponse(responseText: string, model: string): CompletionResponse {
-    const data = JSON.parse(responseText);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        throw new Error("Anthropic API returned malformed response: " + responseText.slice(0, 200));
+      }
+      throw err;
+    }
 
     let text = "";
     if (data && Array.isArray(data.content)) {

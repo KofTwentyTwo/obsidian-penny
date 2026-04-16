@@ -166,7 +166,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         systemPrompt: system,
         userPrompt: user,
         model: route.model,
-        maxTokens: 4096,
+        maxTokens: settings.maxTokens ?? 16000,
         apiKey: settings.anthropicApiKey,
         endpoint: route.provider === "ollama" ? settings.ollamaEndpoint : undefined,
       });

@@ -32,5 +32,10 @@ jobs:
         run: |
           gh release create "$TAG_NAME" \
             --title "v$TAG_NAME" \
-            --generate-notes \
+            --notes "## PENNY v$TAG_NAME
+
+See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+### Installation
+Download \`main.js\`, \`manifest.json\`, and \`styles.css\` into your vault's \`.obsidian/plugins/obsidian-penny/\` directory." \
             main.js manifest.json styles.css

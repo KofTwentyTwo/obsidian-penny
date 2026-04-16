@@ -95,7 +95,6 @@ export function checkVoiceCompliance(prose: string): VoiceComplianceResult {
   const proseLines = prose.split("\n");
   for (const line of proseLines) {
     for (const pattern of SELF_ANALYSIS_PATTERNS) {
-      pattern.lastIndex = 0;
       const m = pattern.exec(line);
       if (m) {
         // Return the matched fragment plus surrounding context (the line).
