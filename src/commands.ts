@@ -499,9 +499,9 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       createdPaths.push(p);
     }
 
-    // Create and open the progress modal (unless running silently, e.g. batch)
-    if (!options?.silent) {
-      modal = new PennyProgressModal(plugin.app, `Processing ${chapterId}`);
+    // Create and open the progress modal (unless running silently or disabled in settings)
+    if (!options?.silent && s.showProgressModal) {
+      modal = new PennyProgressModal(plugin.app, `Processing ${chapterId}`, s.showStatusNotices);
       modal.open();
     }
 

@@ -48,6 +48,10 @@ export interface PennySettings {
   chapterFilePattern: string;
   proseMarker: string;
 
+  // Progress & Notifications
+  showProgressModal: boolean;
+  showStatusNotices: boolean;
+
   // Git
   autoCommitAfterProcessing: boolean;
   autoPushAfterCommit: boolean;
@@ -152,6 +156,9 @@ export const DEFAULT_SETTINGS: PennySettings = {
   verboseLogging: false,
   chapterFilePattern: "ch-*.md",
   proseMarker: "<!-- Prose begins below -->",
+
+  showProgressModal: true,
+  showStatusNotices: true,
 
   autoCommitAfterProcessing: false,
   autoPushAfterCommit: false,

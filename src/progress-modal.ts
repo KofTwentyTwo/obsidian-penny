@@ -6,17 +6,20 @@
  * with status indicators and a cancel/close button.
  */
 
-import { Modal, App } from "obsidian";
+import { Modal, App, Notice } from "obsidian";
 import type { ProgressEvent } from "./pipeline";
 
 export class PennyProgressModal extends Modal {
   private logEl!: HTMLElement;
   private headerEl!: HTMLElement;
   private cancelled = false;
+  private minimized = false;
+  private showStatusNotices: boolean;
 
-  constructor(app: App, title: string) {
+  constructor(app: App, title: string, showStatusNotices = true) {
     super(app);
     this.titleEl.setText(title);
+    this.showStatusNotices = showStatusNotices;
   }
 
   onOpen(): void {
@@ -29,12 +32,19 @@ export class PennyProgressModal extends Modal {
 
     this.logEl = contentEl.createEl("div", { cls: "penny-progress-log" });
 
-    // Cancel / Close button
+    // Button row: Minimize | Cancel/Close
     const buttonRow = contentEl.createEl("div", { cls: "penny-progress-buttons" });
+
+    const minimizeBtn = buttonRow.createEl("button", { text: "Minimize" });
+    minimizeBtn.addEventListener("click", () => {
+      this.minimized = true;
+      this.close();
+      new Notice("PENNY: Processing continues in background. Status updates in notices.", 4000);
+    });
+
     const cancelBtn = buttonRow.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => {
       if (this.cancelled) {
-        // Already cancelled or complete -- act as Close
         this.close();
         return;
       }
@@ -43,8 +53,22 @@ export class PennyProgressModal extends Modal {
     });
   }
 
+  /** Whether the modal was minimized (processing continues in background). */
+  isMinimized(): boolean {
+    return this.minimized;
+  }
+
   /** Called by processChapter to update the modal with a pipeline event. */
   update(event: ProgressEvent): void {
+    // If minimized, show status via Notices instead of modal
+    if (this.minimized) {
+      if (this.showStatusNotices && event.message) {
+        if (event.type === "annotation-done" || event.type === "annotation-error" || event.type === "complete") {
+          new Notice(`PENNY: ${event.message}`, event.type === "complete" ? 6000 : 3000);
+        }
+      }
+      return;
+    }
     if (!this.logEl) return;
 
     switch (event.type) {

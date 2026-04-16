@@ -674,6 +674,34 @@ export class PennySettingTab extends PluginSettingTab {
       );
 
     new Setting(details)
+      .setName("Show progress modal")
+      .setDesc(
+        "Open a progress modal during processing showing real-time annotation status. You can minimize it to continue working."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showProgressModal)
+          .onChange(async (value) => {
+            this.plugin.settings.showProgressModal = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(details)
+      .setName("Show status notices")
+      .setDesc(
+        "Show notice popups for processing status updates. Active when the progress modal is minimized or disabled."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showStatusNotices)
+          .onChange(async (value) => {
+            this.plugin.settings.showStatusNotices = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(details)
       .setName("Verbose logging")
       .setDesc(
         "Write detailed activity entries to the log. Useful for debugging but increases log file size."
