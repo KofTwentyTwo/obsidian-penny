@@ -204,3 +204,54 @@
   font-size: 0.9em;
   color: var(--text-muted);
 }
+
+/* Progress modal */
+.penny-progress-modal {
+  min-width: 500px;
+}
+
+.penny-progress-header {
+  font-weight: 600;
+  font-size: 1.1em;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.penny-progress-log {
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: var(--font-monospace);
+  font-size: 0.85em;
+  margin-bottom: 12px;
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.penny-progress-line {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.penny-progress-line:last-child {
+  border-bottom: none;
+}
+
+.penny-progress-active {
+  color: var(--text-accent);
+}
+
+.penny-progress-done {
+  color: var(--text-muted);
+}
+
+.penny-progress-error {
+  color: var(--text-error, #e74c3c);
+}
+
+.penny-progress-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

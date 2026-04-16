@@ -414,6 +414,9 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
 
   plugin.statusBar?.setProcessing();
 
+  // Declare modal outside try so it is accessible in catch for cleanup
+  let modal: PennyProgressModal | null = null;
+
   try {
     // Merge per-project config overrides from PENNY.md (if present)
     let s = plugin.settings;
@@ -491,7 +494,6 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     }
 
     // Create and open the progress modal (unless running silently, e.g. batch)
-    let modal: PennyProgressModal | null = null;
     if (!options?.silent) {
       modal = new PennyProgressModal(plugin.app, `Processing ${chapterId}`);
       modal.open();
