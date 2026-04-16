@@ -80,8 +80,10 @@ export class AnthropicProvider implements LLMService {
       ],
     };
 
+    // Use adaptive thinking (recommended for Claude 4.6+).
+    // budget_tokens is deprecated on Opus 4.6 and Sonnet 4.6.
     if (request.useThinking === true && THINKING_CAPABLE.has(request.model)) {
-      body.thinking = { type: "enabled", budget_tokens: Math.min(10000, Math.floor(request.maxTokens * 0.5)) };
+      body.thinking = { type: "adaptive" };
     }
 
     const response = await this.httpFn({

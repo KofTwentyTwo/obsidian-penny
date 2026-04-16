@@ -163,9 +163,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         settings.systemPromptTemplate,
       );
 
-      // Only enable thinking for "heavy" tier tags to avoid burning budget on trivial annotations
+      // Only enable thinking for "heavy" tier tags on Anthropic provider
       const tier: ComplexityTier = TAG_COMPLEXITY[annotation.tag] ?? "standard";
-      const useThinking = tier === "heavy";
+      const useThinking = tier === "heavy" && route.provider === "anthropic";
 
       // Call provider
       const response = await callProvider(provider, {
@@ -219,7 +219,17 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
 
   // (f) Assemble new version
   const newVer = nextVersion(currentVersion);
-  const assembled = assembleNewVersion(content, revisions, newVer);
+  const assemblyResult = assembleNewVersion(content, revisions, newVer);
+  const assembled = assemblyResult.content;
+
+  // Surface any skipped overlaps as review flags
+  for (const skip of assemblyResult.skippedOverlaps) {
+    flags.push({
+      type: "plot" as const,
+      line: skip.line,
+      description: `Overlapping annotation [${skip.tag}] at line ${skip.line} was skipped. Only the larger-scope annotation was processed.`,
+    });
+  }
 
   // (g) Update frontmatter
   const { frontmatter: assembledFm, body: assembledBody, keyOrder } = parseFrontmatter(assembled);

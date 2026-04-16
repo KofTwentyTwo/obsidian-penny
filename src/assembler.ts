@@ -49,7 +49,7 @@ export function assembleNewVersion(
   originalContent: string,
   revisions: Array<{ annotation: AnnotatedSection; revisedText: string }>,
   version: number = 1,
-): string {
+): AssemblyResult {
   const lines = originalContent.split("\n");
 
   // Sort revisions bottom-up (highest lineStart first) so that replacements
@@ -156,5 +156,5 @@ export function assembleNewVersion(
     }).trimEnd();
   });
 
-  return final.join("\n");
+  return { content: final.join("\n"), skippedOverlaps };
 }

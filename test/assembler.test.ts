@@ -32,7 +32,7 @@ describe("assembleNewVersion", () => {
         scope: "paragraph",
       });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText: "Better first paragraph." },
       ], 2);
 
@@ -52,7 +52,7 @@ describe("assembleNewVersion", () => {
         instruction: "improve",
       });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText: "Improved text." },
       ], 3);
 
@@ -87,7 +87,7 @@ describe("assembleNewVersion", () => {
         lineEnd: 4,
       });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation: anno1, revisedText: "Fixed para one." },
         { annotation: anno2, revisedText: "Expanded para two with more detail." },
       ], 2);
@@ -108,7 +108,7 @@ describe("assembleNewVersion", () => {
 
       const annotation = makeAnnotation({ lineStart: 0, lineEnd: 1 });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText: "Better text." },
       ], 2);
 
@@ -129,7 +129,7 @@ describe("assembleNewVersion", () => {
         lineEnd: 4,
       });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText: "Fixed text." },
       ], 2);
 
@@ -150,7 +150,7 @@ describe("assembleNewVersion", () => {
         lineEnd: 4,
       });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText: "Revised paragraph." },
       ], 2);
 
@@ -161,7 +161,7 @@ describe("assembleNewVersion", () => {
   describe("edge cases", () => {
     it("handles empty revisions array", () => {
       const original = "Some text.\n%% NOTE: keep this %%";
-      const result = assembleNewVersion(original, [], 2);
+      const { content: result } = assembleNewVersion(original, [], 2);
       expect(result).toContain("Some text.");
       expect(result).toContain("%% NOTE: keep this %%");
     });
@@ -175,7 +175,7 @@ describe("assembleNewVersion", () => {
       const annotation = makeAnnotation({ lineStart: 0, lineEnd: 1 });
       const revisedText = "First expanded line.\n\nSecond expanded line.\n\nThird expanded line.";
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText },
       ], 2);
 
@@ -193,7 +193,7 @@ describe("assembleNewVersion", () => {
         actionable: false,
       });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText: "Should not replace." },
       ], 2);
 
@@ -211,7 +211,7 @@ describe("assembleNewVersion", () => {
         instruction: longInstruction,
       });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText: "New text." },
       ], 2);
 
@@ -228,7 +228,7 @@ describe("assembleNewVersion", () => {
       const original = "Text.\n%% REWRITE: fix %%";
       const annotation = makeAnnotation({ lineStart: 0, lineEnd: 1 });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText: "Fixed." },
       ], 7);
 
@@ -239,7 +239,7 @@ describe("assembleNewVersion", () => {
       const original = "Text.\n%% REWRITE: fix %%";
       const annotation = makeAnnotation({ lineStart: 0, lineEnd: 1 });
 
-      const result = assembleNewVersion(original, [
+      const { content: result } = assembleNewVersion(original, [
         { annotation, revisedText: "Fixed." },
       ]);
 

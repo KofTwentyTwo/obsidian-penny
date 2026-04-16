@@ -112,7 +112,7 @@ describe("AnthropicProvider", () => {
       expect(body.model).toBe("claude-sonnet-4-6");
       expect(body.max_tokens).toBe(4096);
       expect(body.thinking).toBeDefined();
-      expect(body.thinking.type).toBe("enabled");
+      expect(body.thinking.type).toBe("adaptive");
       expect(body.system).toBe("You are a writing assistant.");
       expect(body.messages).toHaveLength(1);
       expect(body.messages[0].role).toBe("user");
@@ -128,7 +128,7 @@ describe("AnthropicProvider", () => {
 
       const body = JSON.parse(calls[0].body!);
       expect(body.thinking).toBeDefined();
-      expect(body.thinking.type).toBe("enabled");
+      expect(body.thinking.type).toBe("adaptive");
     });
 
     it("includes thinking for sonnet-4-6 when useThinking is true", async () => {
@@ -140,7 +140,7 @@ describe("AnthropicProvider", () => {
 
       const body = JSON.parse(calls[0].body!);
       expect(body.thinking).toBeDefined();
-      expect(body.thinking.type).toBe("enabled");
+      expect(body.thinking.type).toBe("adaptive");
     });
 
     it("does NOT include thinking for haiku-4-5 even when useThinking is true", async () => {

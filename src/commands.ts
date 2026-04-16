@@ -1749,6 +1749,13 @@ export class ProjectInitModal extends Modal {
             return;
           }
 
+          // Validate project name
+          const name = this.options.projectName;
+          if (name.includes("..") || name.startsWith("/") || /[:<>"|?*]/.test(name)) {
+            new Notice("PENNY: Project name cannot contain path traversal sequences or special characters (: < > \" | ? *).");
+            return;
+          }
+
           button.setDisabled(true);
           button.setButtonText("Creating...");
 
