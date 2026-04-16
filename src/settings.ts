@@ -437,7 +437,7 @@ export class PennySettingTab extends PluginSettingTab {
     const details = containerEl.createEl("details");
     details.createEl("summary", { text: "Voice Rules" });
 
-    new Setting(details)
+    const voiceRulesSetting = new Setting(details)
       .setName("Custom voice rules")
       .setDesc(
         "Project-specific voice rules injected into every prompt. Write the rules that matter most for your project's voice. These go into the CRITICAL VOICE RULES section of the processing prompt."
@@ -448,17 +448,21 @@ export class PennySettingTab extends PluginSettingTab {
             "e.g., No internal monologue. She never thinks in narrated sentences..."
           )
           .setValue(this.plugin.settings.customVoiceRules)
-          .then((t) => {
-            t.inputEl.rows = 8;
-            t.inputEl.style.width = "100%";
-          })
           .onChange(async (value) => {
             this.plugin.settings.customVoiceRules = value;
             await this.plugin.saveSettings();
           })
       );
+    // Make the textarea full-width below the label
+    voiceRulesSetting.settingEl.style.display = "block";
+    const voiceTextarea = voiceRulesSetting.settingEl.querySelector("textarea");
+    if (voiceTextarea) {
+      voiceTextarea.rows = 10;
+      voiceTextarea.style.width = "100%";
+      voiceTextarea.style.marginTop = "8px";
+    }
 
-    new Setting(details)
+    const systemPromptSetting = new Setting(details)
       .setName("System prompt template")
       .setDesc(
         "The full system prompt sent with every revision request. Uses {voice_rules}, {voice_tests}, {style_guide}, {outline}, {characters}, {wiki}, {chapter}, {tag}, {passage}, {instruction} placeholders. Advanced users only."
@@ -466,17 +470,21 @@ export class PennySettingTab extends PluginSettingTab {
       .addTextArea((text) =>
         text
           .setValue(this.plugin.settings.systemPromptTemplate)
-          .then((t) => {
-            t.inputEl.rows = 12;
-            t.inputEl.style.width = "100%";
-            t.inputEl.style.fontFamily = "monospace";
-            t.inputEl.style.fontSize = "12px";
-          })
           .onChange(async (value) => {
             this.plugin.settings.systemPromptTemplate = value;
             await this.plugin.saveSettings();
           })
       );
+    // Make the textarea full-width below the label
+    systemPromptSetting.settingEl.style.display = "block";
+    const sysTextarea = systemPromptSetting.settingEl.querySelector("textarea");
+    if (sysTextarea) {
+      sysTextarea.rows = 16;
+      sysTextarea.style.width = "100%";
+      sysTextarea.style.marginTop = "8px";
+      sysTextarea.style.fontFamily = "var(--font-monospace)";
+      sysTextarea.style.fontSize = "12px";
+    }
 
     new Setting(details)
       .setName("Reset system prompt")
