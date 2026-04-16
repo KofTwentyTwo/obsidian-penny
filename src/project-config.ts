@@ -45,7 +45,9 @@ export async function findProjectConfig(
   filePath: string,
   vault: VaultReader,
 ): Promise<Partial<PennySettings> | null> {
-  const parts = filePath.split("/");
+  // Guard: strip leading slash to prevent absolute adapter paths
+  const safePath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
+  const parts = safePath.split("/");
   // Remove the filename to start from the directory
   parts.pop();
 

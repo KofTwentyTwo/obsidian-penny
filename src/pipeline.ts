@@ -173,7 +173,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         userPrompt: user,
         model: route.model,
         maxTokens: settings.maxTokens ?? 16000,
-        apiKey: settings.anthropicApiKey,
+        apiKey: route.provider === "anthropic" ? settings.anthropicApiKey
+              : route.provider === "ollama" ? (settings.ollamaApiKey || undefined)
+              : undefined,
         endpoint: route.provider === "ollama" ? settings.ollamaEndpoint : undefined,
         useThinking,
       });
@@ -220,7 +222,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
   const assembled = assembleNewVersion(content, revisions, newVer);
 
   // (g) Update frontmatter
-  const { frontmatter: assembledFm, body: assembledBody } = parseFrontmatter(assembled);
+  const { frontmatter: assembledFm, body: assembledBody, keyOrder } = parseFrontmatter(assembled);
   const wordCountAfter = countProseWords(assembled, settings.proseMarker);
   const charsInScene = detectCharacters(assembled, typeof assembledFm.focus === "string" ? assembledFm.focus : "");
 
@@ -237,7 +239,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
     characters_in_scene: charsInScene,
   });
 
-  const newContent = serializeFrontmatter(updatedFm, assembledBody);
+  const newContent = serializeFrontmatter(updatedFm, assembledBody, keyOrder);
 
   // (h) Update state
   const newState = updateState(state, newVer, toProcess);

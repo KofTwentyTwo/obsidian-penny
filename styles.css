@@ -1,5 +1,70 @@
 /* PENNY - Prose Engine for Narrative, Notes, and Yarns */
 
+/* Settings header */
+.penny-settings-header {
+  margin-bottom: 8px;
+}
+
+.penny-settings-header h1 {
+  margin-bottom: 0;
+  font-size: 1.8em;
+}
+
+.penny-settings-subtitle {
+  margin-top: 2px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.95em;
+}
+
+.penny-settings-links {
+  margin-top: 8px;
+  margin-bottom: 4px;
+  font-size: 0.85em;
+}
+
+.penny-settings-links a {
+  color: var(--text-accent);
+  text-decoration: none;
+}
+
+.penny-settings-links a:hover {
+  text-decoration: underline;
+}
+
+.penny-settings-links span {
+  color: var(--text-faint);
+}
+
+/* Settings collapsible sections */
+.penny-settings-header + hr + details,
+.penny-settings-header + hr ~ details {
+  margin-top: 16px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
+.penny-settings-header + hr ~ details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1.1em;
+  padding: 8px 0;
+  user-select: none;
+}
+
+.penny-settings-header + hr ~ details > summary:hover {
+  color: var(--text-accent);
+}
+
+.penny-settings-header + hr ~ details[open] > summary {
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 8px;
+}
+
 .penny-status-bar {
   display: flex;
   align-items: center;

@@ -18,6 +18,7 @@ import { getLogFilePath } from "./logger";
 import { runPipeline } from "./pipeline";
 import type { PipelineResult } from "./pipeline";
 import { globMatch } from "./utils";
+import { readVersion, nextVersion } from "./versioner";
 import { generateStateJson } from "./migrate";
 import { findProjectConfig } from "./project-config";
 
@@ -71,10 +72,21 @@ export function registerCommands(plugin: PennyPlugin): void {
       }
 
       new Notice(`PENNY: Processing ${chapters.length} chapter(s)...`);
+      let processedCount = 0;
+      let totalAnnotations = 0;
+      let skippedCount = 0;
       for (const file of chapters) {
-        await processChapter(plugin, file);
+        const result = await processChapter(plugin, file, { silent: true });
+        if (result) {
+          processedCount++;
+          totalAnnotations += result.annotationsProcessed;
+        } else {
+          skippedCount++;
+        }
       }
-      new Notice(`PENNY: Finished processing ${chapters.length} chapter(s).`);
+      new Notice(
+        `PENNY: Processed ${processedCount} chapters (${totalAnnotations} annotations), skipped ${skippedCount} with no annotations.`,
+      );
     },
   });
 
@@ -266,15 +278,14 @@ async function safeRead(plugin: PennyPlugin, path: string): Promise<string> {
  */
 async function readFolderFiles(plugin: PennyPlugin, folderPath: string): Promise<string[]> {
   if (!folderPath) return [];
-  const folder = plugin.app.vault.getAbstractFileByPath(folderPath);
-  if (!folder || !(folder instanceof TFolder)) return [];
-
   const results: string[] = [];
-  for (const child of folder.children) {
-    if (child instanceof TFile && child.extension === "md") {
+  const allFiles = plugin.app.vault.getMarkdownFiles();
+  const prefix = normalizePath(folderPath) + "/";
+  for (const f of allFiles) {
+    if (f.path.startsWith(prefix)) {
       try {
-        const text = await plugin.app.vault.read(child);
-        results.push(text);
+        const content = await plugin.app.vault.cachedRead(f);
+        if (content.trim()) results.push(content);
       } catch {
         // Skip unreadable files
       }
@@ -372,7 +383,7 @@ function bookIdFromFile(file: TFile): string {
  * Process annotations in a single chapter file.
  * Runs the full pipeline: parse -> context -> draft -> assemble -> version.
  */
-export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
+export async function processChapter(plugin: PennyPlugin, file: TFile, options?: { silent?: boolean }): Promise<PipelineResult | null> {
   plugin.processingFiles.add(file.path);
 
   // Paths of files we create during processing -- added to processingFiles
@@ -386,7 +397,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
   } catch (readErr) {
     const msg = readErr instanceof Error ? readErr.message : String(readErr);
     new Notice(`PENNY: Failed to read ${file.basename} -- ${msg}`);
-    return;
+    return null;
   }
 
   // Quick check: any actionable annotations at all?
@@ -394,8 +405,10 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
   const actionableCount = allAnnotations.filter((a) => a.actionable).length;
 
   if (actionableCount === 0) {
-    new Notice(`PENNY: No actionable annotations in ${file.basename}.`);
-    return;
+    if (!options?.silent) {
+      new Notice(`PENNY: No actionable annotations in ${file.basename}.`);
+    }
+    return null;
   }
 
   plugin.statusBar?.setProcessing();
@@ -436,6 +449,21 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
       console.log(`[PENNY] Annotations found: ${actionableCount} actionable`);
     }
 
+    // Pre-compute all output paths and add to processingFiles BEFORE the
+    // pipeline runs, preventing the auto-save hook from picking them up
+    // during the async pipeline execution.
+    const currentVersion = readVersion(versionContent);
+    const expectedNextVersion = nextVersion(currentVersion);
+    const newVersionPath = `${folderPath}/${chapterId}.v${expectedNextVersion}.md`;
+    const versionFilePath = `${folderPath}/.version`;
+    const stateFilePath = `${folderPath}/.state.json`;
+
+    const newPaths = [newVersionPath, versionFilePath, stateFilePath];
+    for (const p of newPaths) {
+      plugin.processingFiles.add(p);
+      createdPaths.push(p);
+    }
+
     // Run the pipeline
     const result = await runPipeline({
       content,
@@ -454,24 +482,14 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
     });
 
     if (!result) {
-      new Notice(`PENNY: No new annotations to process in ${file.basename}.`);
-      return;
+      if (!options?.silent) {
+        new Notice(`PENNY: No new annotations to process in ${file.basename}.`);
+      }
+      return null;
     }
 
     if (s.verboseLogging) {
       console.log(`[PENNY] Pipeline complete: ${result.annotationsProcessed} processed, v${result.newVersion} (${result.durationMs}ms)`);
-    }
-
-    // Compute all paths we are about to create BEFORE writing them,
-    // so the auto-save hook does not pick them up.
-    const newVersionPath = `${folderPath}/${chapterId}.v${result.newVersion}.md`;
-    const versionFilePath = `${folderPath}/.version`;
-    const stateFilePath = `${folderPath}/.state.json`;
-
-    const newPaths = [newVersionPath, versionFilePath, stateFilePath];
-    for (const p of newPaths) {
-      plugin.processingFiles.add(p);
-      createdPaths.push(p);
     }
 
     // Write new version file
@@ -534,9 +552,12 @@ export async function processChapter(plugin: PennyPlugin, file: TFile): Promise<
         await gitPush(plugin);
       }
     }
+
+    return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     new Notice(`PENNY: Error processing ${file.basename} -- ${message}`);
+    return null;
   } finally {
     plugin.statusBar?.setReady();
     const activeFile = plugin.app.workspace.getActiveFile();
@@ -703,7 +724,9 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
   }
 
   if (migratedCount === 0 && skippedCount === 0) {
-    new Notice("PENNY: No chapter files found to migrate.");
+    new Notice(
+      `PENNY: No flat chapter files found. Chapters may already be migrated, or check that your drafts folder structure matches: ${draftsFolder}/{book-N}/ch-XX.md`,
+    );
   } else {
     new Notice(
       `PENNY: Migration complete. Migrated: ${migratedCount}, already migrated: ${skippedCount}.`
@@ -1061,7 +1084,7 @@ async function gitPush(plugin: PennyPlugin): Promise<void> {
  */
 async function ensureFolder(plugin: PennyPlugin, path: string): Promise<void> {
   const existing = plugin.app.vault.getAbstractFileByPath(path);
-  if (existing) return;
+  if (existing instanceof TFolder) return;
 
   // Create parent folders recursively
   const parts = path.split("/");
@@ -1069,7 +1092,7 @@ async function ensureFolder(plugin: PennyPlugin, path: string): Promise<void> {
   for (const part of parts) {
     current = current ? `${current}/${part}` : part;
     const folder = plugin.app.vault.getAbstractFileByPath(current);
-    if (!folder) {
+    if (!(folder instanceof TFolder)) {
       await plugin.app.vault.createFolder(current);
     }
   }

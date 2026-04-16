@@ -129,7 +129,7 @@ export const DEFAULT_SETTINGS: PennySettings = {
   routeLight: { provider: "anthropic", model: "claude-haiku-4-5" },
   routeStandard: { provider: "anthropic", model: "claude-sonnet-4-6" },
   routeHeavy: { provider: "anthropic", model: "claude-opus-4-6" },
-  useSameModelForAll: true,
+  useSameModelForAll: false,
 
   contextBudget: 800000,
   maxTokens: 16000,

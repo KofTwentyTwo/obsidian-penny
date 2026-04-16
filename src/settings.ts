@@ -29,11 +29,32 @@ export class PennySettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h1", { text: "PENNY - Prose Co-Author" });
-    containerEl.createEl("p", {
-      text: "Configure PENNY to work with your novel project. Set your API key, point PENNY at your project files, and define your voice rules.",
+    // Plugin header
+    const header = containerEl.createDiv({ cls: "penny-settings-header" });
+    header.createEl("h1", { text: "PENNY" });
+    header.createEl("p", {
+      text: "Prose Engine for Narrative, Notes, and Yarns",
+      cls: "penny-settings-subtitle",
+    });
+    header.createEl("p", {
+      text: "AI-powered prose revision agent. Processes editorial annotations, enforces voice consistency, and manages chapter versions.",
       cls: "setting-item-description",
     });
+
+    const links = header.createDiv({ cls: "penny-settings-links" });
+    const addLink = (label: string, url: string) => {
+      const a = links.createEl("a", { text: label, href: url });
+      a.setAttr("target", "_blank");
+    };
+    addLink("Documentation", "https://github.com/KofTwentyTwo/obsidian-penny/tree/main/docs");
+    links.createSpan({ text: " | " });
+    addLink("Getting Started", "https://github.com/KofTwentyTwo/obsidian-penny/blob/main/docs/getting-started.md");
+    links.createSpan({ text: " | " });
+    addLink("Report a Bug", "https://github.com/KofTwentyTwo/obsidian-penny/issues");
+    links.createSpan({ text: " | " });
+    addLink("GitHub", "https://github.com/KofTwentyTwo/obsidian-penny");
+
+    containerEl.createEl("hr");
 
     this.renderProvidersSection(containerEl);
     this.renderModelRoutingSection(containerEl);

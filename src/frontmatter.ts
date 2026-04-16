@@ -23,15 +23,17 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 export function parseFrontmatter(content: string): {
   frontmatter: ChapterFrontmatter;
   body: string;
+  keyOrder: string[];
 } {
   const match = content.match(FRONTMATTER_RE);
   if (!match) {
-    return { frontmatter: {}, body: content };
+    return { frontmatter: {}, body: content, keyOrder: [] };
   }
 
   const yamlBlock = match[1];
   const body = content.slice(match[0].length).replace(/^\r?\n/, "");
   const frontmatter: ChapterFrontmatter = {};
+  const keyOrder: string[] = [];
 
   const lines = yamlBlock.split(/\r?\n/);
   let currentKey: string | null = null;
@@ -58,6 +60,11 @@ export function parseFrontmatter(content: string): {
 
     const key = kvMatch[1];
     const rawValue = kvMatch[2].trim();
+
+    // Track key order
+    if (!keyOrder.includes(key)) {
+      keyOrder.push(key);
+    }
 
     // If value is empty, this might be the start of an array.
     if (rawValue === "" || rawValue === "[]") {
@@ -86,7 +93,7 @@ export function parseFrontmatter(content: string): {
     (frontmatter as Record<string, unknown>)[currentKey] = currentArray;
   }
 
-  return { frontmatter, body };
+  return { frontmatter, body, keyOrder };
 }
 
 function parseYamlValue(raw: string): string | number | boolean {
@@ -131,11 +138,11 @@ function quoteYamlValue(value: string): string {
 /**
  * Serialize frontmatter and body back into a markdown string.
  */
-export function serializeFrontmatter(frontmatter: ChapterFrontmatter, body: string): string {
+export function serializeFrontmatter(frontmatter: ChapterFrontmatter, body: string, keyOrder?: string[]): string {
   const yamlLines: string[] = [];
 
-  for (const [key, value] of Object.entries(frontmatter)) {
-    if (value === undefined || value === null) continue;
+  const serializeKey = (key: string, value: unknown): void => {
+    if (value === undefined || value === null) return;
 
     if (Array.isArray(value)) {
       if (value.length === 0) {
@@ -153,6 +160,26 @@ export function serializeFrontmatter(frontmatter: ChapterFrontmatter, body: stri
       yamlLines.push(`${key}: ${quoteYamlValue(value)}`);
     } else {
       yamlLines.push(`${key}: ${value}`);
+    }
+  };
+
+  // Serialize in original key order first, then any new keys
+  const allKeys = Object.keys(frontmatter);
+  const seen = new Set<string>();
+
+  if (keyOrder && keyOrder.length > 0) {
+    for (const key of keyOrder) {
+      if (key in frontmatter) {
+        serializeKey(key, (frontmatter as Record<string, unknown>)[key]);
+        seen.add(key);
+      }
+    }
+  }
+
+  // Append any keys not in the original order (new agent-added fields)
+  for (const key of allKeys) {
+    if (!seen.has(key)) {
+      serializeKey(key, (frontmatter as Record<string, unknown>)[key]);
     }
   }
 
@@ -187,8 +214,8 @@ export function countProseWords(content: string, proseMarker: string): number {
     }
   }
 
-  // Strip markdown comments %% ... %%
-  text = text.replace(/%%.*?%%/g, "");
+  // Strip markdown comments %% ... %% (including multi-line)
+  text = text.replace(/%%[\s\S]*?%%/g, "");
   // Strip HTML comments <!-- ... -->
   text = text.replace(/<!--[\s\S]*?-->/g, "");
   // Strip markdown headings markers (keep the text)

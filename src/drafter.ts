@@ -61,11 +61,11 @@ export function buildPrompt(
   }
 
   // Replace annotation-level placeholders.
-  system = system.replace(/\{tag\}/g, annotation.tag);
-  system = system.replace(/\{lineStart\}/g, String(annotation.lineStart));
-  system = system.replace(/\{lineEnd\}/g, String(annotation.lineEnd));
-  system = system.replace(/\{passage\}/g, annotation.originalText);
-  system = system.replace(/\{instruction\}/g, annotation.instruction);
+  system = system.replace(/\{tag\}/g, () => annotation.tag);
+  system = system.replace(/\{lineStart\}/g, () => String(annotation.lineStart));
+  system = system.replace(/\{lineEnd\}/g, () => String(annotation.lineEnd));
+  system = system.replace(/\{passage\}/g, () => annotation.originalText);
+  system = system.replace(/\{instruction\}/g, () => annotation.instruction);
 
   // Clean up any double blank lines left by section removal.
   system = system.replace(/\n{3,}/g, "\n\n");
