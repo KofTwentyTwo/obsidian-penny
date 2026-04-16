@@ -122,7 +122,7 @@ function needsYamlQuoting(value: string): boolean {
   // Starts with a YAML-special character
   if (/^[@!*&'"]/.test(value)) return true;
   // Contains characters that could break YAML parsing
-  if (/[:#\[\]{}"']/.test(value)) return true;
+  if (/[:#[\]{}"']/.test(value)) return true;
   return false;
 }
 
