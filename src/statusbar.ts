@@ -7,6 +7,7 @@
 
 import type { TFile } from "obsidian";
 import type PennyPlugin from "./main";
+import { globMatch } from "./utils";
 
 /** Status bar display states */
 type StatusBarState = "ready" | "processing" | "info";
@@ -101,42 +102,7 @@ export class PennyStatusBar {
    * constructing a RegExp from user input to avoid ReDoS.
    */
   private isChapterFile(file: TFile, plugin: PennyPlugin): boolean {
-    return this.globMatch(plugin.settings.chapterFilePattern, file.name);
-  }
-
-  /**
-   * Match a filename against a simple glob pattern.
-   * Supports `*` (any sequence of characters) and `?` (any single character).
-   * Uses iterative comparison instead of RegExp to avoid ReDoS.
-   */
-  private globMatch(pattern: string, text: string): boolean {
-    let pi = 0;
-    let ti = 0;
-    let starPi = -1;
-    let matchTi = -1;
-
-    while (ti < text.length) {
-      if (pi < pattern.length && (pattern[pi] === text[ti] || pattern[pi] === "?")) {
-        pi++;
-        ti++;
-      } else if (pi < pattern.length && pattern[pi] === "*") {
-        starPi = pi;
-        matchTi = ti;
-        pi++;
-      } else if (starPi !== -1) {
-        pi = starPi + 1;
-        matchTi++;
-        ti = matchTi;
-      } else {
-        return false;
-      }
-    }
-
-    while (pi < pattern.length && pattern[pi] === "*") {
-      pi++;
-    }
-
-    return pi === pattern.length;
+    return globMatch(plugin.settings.chapterFilePattern, file.name);
   }
 
   /**

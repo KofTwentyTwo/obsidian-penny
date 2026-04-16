@@ -120,14 +120,15 @@ describe("OllamaProvider", () => {
       expect(models[0].costPer1kOutput).toBe(0);
     });
 
-    it("returns empty array when Ollama is not running", async () => {
+    it("throws when Ollama is not running (connection refused)", async () => {
       const fn: HttpFn = async () => {
         throw new Error("Connection refused");
       };
       const provider = new OllamaProvider(fn);
 
-      const models = await provider.getModels({ endpoint: "http://localhost:11434" });
-      expect(models).toEqual([]);
+      await expect(
+        provider.getModels({ endpoint: "http://localhost:11434" }),
+      ).rejects.toThrow("Cannot connect to Ollama at http://localhost:11434. Is Ollama running?");
     });
 
     it("returns empty array for unexpected response format", async () => {
@@ -263,6 +264,33 @@ describe("OllamaProvider", () => {
 
       expect(calls[0].headers!["Authorization"]).toBeUndefined();
     });
+
+    it("throws on non-2xx response with error message", async () => {
+      const errorResponse = JSON.stringify({ error: "model not found" });
+      const { fn } = mockHttp({ status: 404, text: errorResponse });
+      const provider = new OllamaProvider(fn);
+
+      await expect(provider.complete(makeRequest())).rejects.toThrow("Ollama error (404)");
+      await expect(provider.complete(makeRequest())).rejects.toThrow("model not found");
+    });
+
+    it("throws on 500 response with raw text when not JSON", async () => {
+      const { fn } = mockHttp({ status: 500, text: "Internal Server Error" });
+      const provider = new OllamaProvider(fn);
+
+      await expect(provider.complete(makeRequest())).rejects.toThrow("Ollama error (500): Internal Server Error");
+    });
+
+    it("throws connection refused message when Ollama is not running", async () => {
+      const fn: HttpFn = async () => {
+        throw new Error("ECONNREFUSED");
+      };
+      const provider = new OllamaProvider(fn);
+
+      await expect(
+        provider.complete(makeRequest()),
+      ).rejects.toThrow("Cannot connect to Ollama at http://localhost:11434. Is Ollama running?");
+    });
   });
 
   describe("estimateTokens", () => {
@@ -322,6 +350,7 @@ describe("OllamaProvider", () => {
 
       const result = await provider.testConnection({ endpoint: "http://localhost:11434" });
       expect(result).toContain("500");
+      expect(result).toContain("Ollama error");
     });
 
     it("returns error message when Ollama is not running", async () => {
@@ -331,8 +360,9 @@ describe("OllamaProvider", () => {
       const provider = new OllamaProvider(fn);
 
       const result = await provider.testConnection({ endpoint: "http://localhost:11434" });
-      expect(result).toContain("ECONNREFUSED");
+      expect(result).toContain("Cannot connect to Ollama");
       expect(result).toContain("http://localhost:11434");
+      expect(result).toContain("Is Ollama running?");
     });
 
     it("uses default endpoint when not specified", async () => {

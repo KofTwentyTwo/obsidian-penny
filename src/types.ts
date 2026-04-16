@@ -80,16 +80,6 @@ export const DEFAULT_SYSTEM_PROMPT = `You are PENNY, a fiction co-author. You ar
 
 ---
 
-## Task: {tag}
-
-### Passage to Revise (Lines {lineStart}-{lineEnd})
-{passage}
-
-### Author's Instruction
-{instruction}
-
----
-
 Write the revised passage. Rules:
 - Output ONLY the replacement text. No commentary, no meta-text, no code fences.
 - Match the project's established prose style exactly.
@@ -133,6 +123,8 @@ export const DEFAULT_SETTINGS: PennySettings = {
   ollamaEndpoint: "http://localhost:11434",
   ollamaApiKey: "",
 
+  // These are valid current Anthropic model aliases (as of 2026).
+  // See: https://docs.anthropic.com/en/docs/about-claude/models
   routeLight: { provider: "anthropic", model: "claude-haiku-4-5" },
   routeStandard: { provider: "anthropic", model: "claude-sonnet-4-6" },
   routeHeavy: { provider: "anthropic", model: "claude-opus-4-6" },

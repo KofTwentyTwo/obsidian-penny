@@ -214,3 +214,71 @@ git remote add origin https://github.com/your-username/your-vault.git
 2. Fix the underlying issue (API key, rate limit, network, etc.).
 3. The original annotation is preserved. Run **PENNY: Process this chapter** again and PENNY will retry the failed annotations.
 4. Delete the `AGENT-ERROR` markers after successful reprocessing -- they are informational only.
+
+## Ollama Connection Issues
+
+### "Ollama connection failed"
+
+**Symptom:** The Test Ollama Connection button fails, or processing fails when routing to Ollama.
+
+**Common causes and fixes:**
+
+1. **Ollama is not running.** Start it:
+   ```bash
+   ollama serve
+   ```
+   On macOS, Ollama usually runs as a background service after install. Check your menu bar for the Ollama icon.
+
+2. **Wrong endpoint.** The default is `http://localhost:11434`. If you changed Ollama's port or are running it on a remote machine, update the endpoint in Settings > PENNY > Providers.
+
+3. **Firewall blocking the connection.** Obsidian makes HTTP requests to the Ollama endpoint. If a firewall or security tool is blocking localhost connections, whitelist Obsidian or the Ollama port.
+
+4. **Docker networking.** If Ollama runs in Docker, `localhost` inside Obsidian points to your host machine, not the container. Use the container's exposed port or Docker network address.
+
+### "Model not found" from Ollama
+
+**Symptom:** Ollama returns an error about the model not being available.
+
+**Fix:**
+1. Check which models you have installed:
+   ```bash
+   ollama list
+   ```
+2. If the model in your routing settings is not listed, pull it:
+   ```bash
+   ollama pull llama3.2
+   ```
+3. Verify the model name in Settings > PENNY > Model Routing matches exactly what Ollama reports (e.g. `llama3.2`, not `llama3` or `Llama3.2`).
+
+### Ollama is slow
+
+**Cause:** Local model inference speed depends on your hardware. Large models (70B+ parameters) are slow without a powerful GPU.
+
+**Fix:**
+- Use a smaller model for Light-tier tasks (7B or 8B parameter models are fast on most machines).
+- Reserve Ollama for simple edits (CUT, PACING) and route complex work to Anthropic.
+- If you have a GPU, make sure Ollama is using it (check Ollama docs for GPU configuration).
+
+## Model Routing Misconfiguration
+
+### "Model routing uses Anthropic but no API key is set"
+
+**Symptom:** PENNY refuses to process and shows a notice about routing to a provider that is not configured.
+
+**Fix:**
+1. Go to Settings > PENNY > Model Routing.
+2. Check which provider each tier points to.
+3. Either configure the provider in Settings > PENNY > Providers, or change the routing to point to a provider you have configured.
+
+### Wrong model for the job
+
+**Symptom:** Output quality varies widely across annotations in the same chapter.
+
+**Cause:** If model routing is on with different tiers, some annotations may be using a less capable model.
+
+**Fix:**
+1. Check the review note. Each annotation change lists which provider and model were used.
+2. If a Light-tier model produced poor results on a CUT annotation, either:
+   - Reannotate with a more specific instruction, or
+   - Change the Light tier to a more capable model in Settings > PENNY > Model Routing.
+3. If you want consistent quality across all annotations, turn on **Use same model for all tiers** and select your preferred model.

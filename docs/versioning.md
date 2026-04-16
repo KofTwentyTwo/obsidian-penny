@@ -146,7 +146,7 @@ Run **PENNY: Migrate chapters** from the command palette.
 
 ### Migration is safe:
 
-- **Checksum verified** -- PENNY verifies the copy matches the original before deleting the flat file.
+- **Content verified** -- After writing the versioned copy, PENNY reads it back and compares it to the original content. The original flat file is only deleted if the content matches exactly. If verification fails, the original file is preserved and an error is shown.
 - **Idempotent** -- Chapters already in folder format are skipped. Running migration twice is safe.
 - **Non-destructive** -- If anything fails mid-migration, already-migrated chapters remain valid and un-migrated chapters remain as flat files.
 

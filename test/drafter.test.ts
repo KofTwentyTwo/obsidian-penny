@@ -49,7 +49,7 @@ describe("buildPrompt", () => {
     expect(system).toContain("No internal monologue.");
   });
 
-  it("replaces annotation-level placeholders", () => {
+  it("puts annotation-level details in the user prompt, not the system prompt", () => {
     const context = makeContext();
     const annotation = makeAnnotation({
       tag: "EXPAND",
@@ -59,12 +59,18 @@ describe("buildPrompt", () => {
       lineEnd: 17,
     });
 
-    const { system } = buildPrompt(context, annotation, DEFAULT_SYSTEM_PROMPT);
+    const { system, user } = buildPrompt(context, annotation, DEFAULT_SYSTEM_PROMPT);
 
-    expect(system).toContain("Task: EXPAND");
-    expect(system).toContain("Lines 15-17");
-    expect(system).toContain("The room was dark.");
-    expect(system).toContain("add sensory detail");
+    // Task details should be in the user prompt
+    expect(user).toContain("Task: EXPAND");
+    expect(user).toContain("Lines 15-17");
+    expect(user).toContain("The room was dark.");
+    expect(user).toContain("add sensory detail");
+
+    // System prompt should NOT duplicate the task/passage/instruction sections
+    expect(system).not.toContain("Task: EXPAND");
+    expect(system).not.toContain("Passage to Revise");
+    expect(system).not.toContain("Author's Instruction");
   });
 
   it("builds a user prompt with the task details", () => {

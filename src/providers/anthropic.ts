@@ -18,6 +18,9 @@ import type {
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+/** Models that support the extended thinking feature. */
+const THINKING_CAPABLE = new Set(["claude-opus-4-6", "claude-sonnet-4-6"]);
+
 /** Static model catalog for Anthropic. */
 const ANTHROPIC_MODELS: ModelInfo[] = [
   {
@@ -62,15 +65,18 @@ export class AnthropicProvider implements LLMService {
       throw new Error("Anthropic API key is required");
     }
 
-    const body = {
+    const body: Record<string, unknown> = {
       model: request.model,
       max_tokens: request.maxTokens,
-      thinking: { type: "enabled", budget_tokens: Math.min(10000, Math.floor(request.maxTokens * 0.5)) },
       system: request.systemPrompt,
       messages: [
         { role: "user", content: request.userPrompt },
       ],
     };
+
+    if (THINKING_CAPABLE.has(request.model)) {
+      body.thinking = { type: "enabled", budget_tokens: Math.min(10000, Math.floor(request.maxTokens * 0.5)) };
+    }
 
     const response = await this.httpFn({
       url: ANTHROPIC_API_URL,
@@ -82,6 +88,10 @@ export class AnthropicProvider implements LLMService {
       },
       body: JSON.stringify(body),
     });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw this.buildHttpError(response.status, response.text);
+    }
 
     return this.parseResponse(response.text, request.model);
   }
@@ -117,11 +127,37 @@ export class AnthropicProvider implements LLMService {
       if (response.status >= 200 && response.status < 300) {
         return null; // success
       }
-      return `Anthropic API returned status ${response.status}`;
+      return this.buildHttpError(response.status, response.text).message;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Anthropic connection failed: ${message}`;
     }
+  }
+
+  /**
+   * Build a descriptive Error from an Anthropic HTTP error response.
+   * Attempts to parse the Anthropic error JSON format; falls back to raw text.
+   */
+  private buildHttpError(status: number, responseText: string): Error {
+    let detail: string;
+    try {
+      const data = JSON.parse(responseText);
+      if (data?.error?.message) {
+        detail = data.error.message;
+      } else {
+        detail = responseText;
+      }
+    } catch {
+      detail = responseText;
+    }
+
+    if (status === 401) {
+      return new Error(`Anthropic API error (401): Invalid API key. ${detail}`);
+    }
+    if (status === 429) {
+      return new Error(`Anthropic API error (429): Rate limited. ${detail}`);
+    }
+    return new Error(`Anthropic API error (${status}): ${detail}`);
   }
 
   /**

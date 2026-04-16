@@ -13,15 +13,14 @@ import {
   ALL_TAGS,
 } from "./types";
 
-/** Regex matching a single annotation: %% TAG: instruction %% (global, for exec loops) */
-const ANNOTATION_RE = /%%\s*([A-Z]+)\s*:\s*(.*?)\s*%%/g;
+/** Non-global regex pattern for matching annotations. A new RegExp is created per use. */
+const ANNOTATION_PATTERN = /%%\s*([A-Z]+)\s*:\s*(.*?)\s*%%/;
 
 /**
  * Strip all annotation markers from a string.
- * Uses a fresh regex each call to avoid lastIndex state pollution.
  */
 function stripAnnotations(text: string): string {
-  return text.replace(/%%\s*[A-Z]+\s*:\s*.*?\s*%%/g, "");
+  return text.replace(new RegExp(ANNOTATION_PATTERN.source, "g"), "");
 }
 
 /**
@@ -140,11 +139,10 @@ export function parseAnnotations(content: string): AnnotatedSection[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // Reset regex state for this line
-    ANNOTATION_RE.lastIndex = 0;
-    let match: RegExpExecArray | null;
+    // Create a fresh global regex for each line to avoid shared state issues
+    const lineRegex = new RegExp(ANNOTATION_PATTERN.source, "g");
 
-    while ((match = ANNOTATION_RE.exec(line)) !== null) {
+    for (const match of line.matchAll(lineRegex)) {
       const tag = match[1];
       const instruction = match[2].trim();
 
@@ -159,10 +157,6 @@ export function parseAnnotations(content: string): AnnotatedSection[] {
       // For inline scope the original text is the line content minus annotations.
       // For paragraph / section the original text is the range [lineStart..lineEnd]
       // excluding lines that are purely annotations.
-      // Save and restore lastIndex around scope resolution and text extraction
-      // to prevent the global ANNOTATION_RE state from being corrupted.
-      const savedLastIndex = ANNOTATION_RE.lastIndex;
-
       let originalText: string;
       if (scope === "inline") {
         originalText = stripAnnotations(line).trim();
@@ -177,9 +171,6 @@ export function parseAnnotations(content: string): AnnotatedSection[] {
         }
         originalText = passageLines.join("\n").trim();
       }
-
-      // Restore regex state so the exec loop can continue correctly.
-      ANNOTATION_RE.lastIndex = savedLastIndex;
 
       const actionable = isActionableTag(tag);
       const hash = hashAnnotation(tag, instruction, originalText);

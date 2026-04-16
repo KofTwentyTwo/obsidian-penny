@@ -267,7 +267,7 @@ PENNY revises everything from "She entered..." to the next `##` heading.
 
 ### Multiple annotations on the same passage
 
-When multiple annotations target the same text, PENNY combines all instructions and processes them together in a single revision.
+**Planned for future version.** Currently, each annotation is processed independently. If multiple annotations target the same passage, each one generates a separate revision pass applied in sequence (bottom to top).
 
 ```markdown
 "I suppose we might consider an alternative approach," she said thoughtfully.
@@ -277,7 +277,7 @@ When multiple annotations target the same text, PENNY combines all instructions 
 %% TONE: Match the voice tests. %%
 ```
 
-PENNY combines all three instructions and produces one revision that addresses dialog, character voice, and tone together.
+Each annotation above is processed as a separate revision. The DIALOG annotation is applied first, then CHARACTER, then TONE. For best results when multiple concerns apply to one passage, combine them into a single annotation with all instructions.
 
 ## Tips for Writing Good Instructions
 

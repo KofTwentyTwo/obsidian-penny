@@ -33,7 +33,7 @@ export function parseFrontmatter(content: string): {
   const body = content.slice(match[0].length).replace(/^\r?\n/, "");
   const frontmatter: ChapterFrontmatter = {};
 
-  const lines = yamlBlock.split("\n");
+  const lines = yamlBlock.split(/\r?\n/);
   let currentKey: string | null = null;
   let currentArray: string[] | null = null;
 
@@ -105,6 +105,30 @@ function parseYamlValue(raw: string): string | number | boolean {
 }
 
 /**
+ * Check if a string value needs quoting for safe YAML serialization.
+ * Values containing YAML-unsafe characters must be double-quoted.
+ */
+function needsYamlQuoting(value: string): boolean {
+  if (value.length === 0) return true;
+  // Leading/trailing whitespace
+  if (value !== value.trim()) return true;
+  // Starts with a YAML-special character
+  if (/^[@!*&'"]/.test(value)) return true;
+  // Contains characters that could break YAML parsing
+  if (/[:#\[\]{}"']/.test(value)) return true;
+  return false;
+}
+
+/**
+ * Quote a string value for YAML serialization using double quotes.
+ * Internal double quotes are escaped.
+ */
+function quoteYamlValue(value: string): string {
+  const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
+
+/**
  * Serialize frontmatter and body back into a markdown string.
  */
 export function serializeFrontmatter(frontmatter: ChapterFrontmatter, body: string): string {
@@ -119,11 +143,14 @@ export function serializeFrontmatter(frontmatter: ChapterFrontmatter, body: stri
       } else {
         yamlLines.push(`${key}:`);
         for (const item of value) {
-          yamlLines.push(`  - ${item}`);
+          const itemStr = String(item);
+          yamlLines.push(`  - ${needsYamlQuoting(itemStr) ? quoteYamlValue(itemStr) : itemStr}`);
         }
       }
     } else if (typeof value === "string" && value === "") {
       yamlLines.push(`${key}: ""`);
+    } else if (typeof value === "string" && needsYamlQuoting(value)) {
+      yamlLines.push(`${key}: ${quoteYamlValue(value)}`);
     } else {
       yamlLines.push(`${key}: ${value}`);
     }

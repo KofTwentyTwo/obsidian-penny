@@ -5,10 +5,26 @@
  * for scaffolding new novel projects.
  */
 
-import { Modal, Notice, Setting, TFile, TFolder } from "obsidian";
+import { FileSystemAdapter, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import { execFile } from "child_process";
 import type PennyPlugin from "./main";
-import type { ProjectInitOptions } from "./types";
+import type { ProjectInitOptions, PennySettings, AnnotatedSection, AnnotationChange, ReviewFlag } from "./types";
+import { parseAnnotations } from "./parser";
+import { assembleContext, selectVoiceTestSection } from "./context";
+import type { ContextFiles } from "./context";
+import { buildPrompt, callProvider } from "./drafter";
+import { assembleNewVersion } from "./assembler";
+import { readVersion, nextVersion, readState, updateState, shouldProcess, serializeState } from "./versioner";
+import { parseFrontmatter, serializeFrontmatter, updateAgentFields, countProseWords, detectCharacters } from "./frontmatter";
+import { generateReview, getReviewFilePath } from "./reviewer";
+import { createLogEntry, formatLogEntry, getLogFilePath } from "./logger";
+import { checkVoiceCompliance } from "./voice-check";
+import { getRoute } from "./providers/router";
+import type { RouteConfig } from "./providers/router";
+import type { CompletionRequest } from "./providers/service";
+import { runPipeline } from "./pipeline";
+import type { PipelineInput, PipelineResult } from "./pipeline";
+import { globMatch } from "./utils";
 
 /**
  * Register all PENNY commands with the Obsidian command palette.
@@ -147,30 +163,54 @@ export function registerCommands(plugin: PennyPlugin): void {
 // ============================================================================
 
 /**
- * Check whether at least one LLM provider is configured.
+ * Check that every LLM provider referenced by any route tier is properly
+ * configured. Validates all three routes (light, standard, heavy) rather
+ * than just the standard route.
  *
- * For Anthropic, an API key is required. For Ollama, just the endpoint
- * (defaulted). Shows a notice if nothing is usable.
+ * Returns true only if every required provider is usable.
  */
 function requireProvider(plugin: PennyPlugin): boolean {
   const s = plugin.settings;
-  const hasAnthropic = !!s.anthropicApiKey;
-  const hasOllama = !!s.ollamaEndpoint;
 
-  if (!hasAnthropic && !hasOllama) {
-    new Notice(
-      "PENNY: No LLM provider configured. Open Settings > PENNY to add an Anthropic API key or configure Ollama."
-    );
-    return false;
+  const routes: Array<{ tier: string; provider: string }> = s.useSameModelForAll
+    ? [{ tier: "standard", provider: s.routeStandard.provider }]
+    : [
+        { tier: "light", provider: s.routeLight.provider },
+        { tier: "standard", provider: s.routeStandard.provider },
+        { tier: "heavy", provider: s.routeHeavy.provider },
+      ];
+
+  // De-duplicate providers while keeping which tier(s) use them
+  const providerTiers = new Map<string, string[]>();
+  for (const r of routes) {
+    const existing = providerTiers.get(r.provider) ?? [];
+    existing.push(r.tier);
+    providerTiers.set(r.provider, existing);
   }
 
-  // Check that the routed provider is actually configured
-  const route = s.routeStandard; // representative route
-  if (route.provider === "anthropic" && !hasAnthropic) {
-    new Notice(
-      "PENNY: Model routing uses Anthropic but no API key is set. Open Settings > PENNY > Providers."
-    );
-    return false;
+  for (const [provider, tiers] of providerTiers) {
+    const tierLabel = tiers.map((t) => `'${t}'`).join(", ");
+
+    if (provider === "anthropic") {
+      if (!s.anthropicApiKey) {
+        new Notice(
+          `PENNY: Route ${tierLabel} uses Anthropic but no API key is set. Open Settings > PENNY > Providers.`
+        );
+        return false;
+      }
+    } else if (provider === "ollama") {
+      if (!s.ollamaEndpoint) {
+        new Notice(
+          `PENNY: Route ${tierLabel} uses Ollama but no endpoint is configured. Open Settings > PENNY > Providers.`
+        );
+        return false;
+      }
+    } else {
+      new Notice(
+        `PENNY: Route ${tierLabel} uses unknown provider '${provider}'. Check Settings > PENNY > Model Routing.`
+      );
+      return false;
+    }
   }
 
   return true;
@@ -181,60 +221,6 @@ function requireProvider(plugin: PennyPlugin): boolean {
  */
 function isChapterFile(file: TFile, plugin: PennyPlugin): boolean {
   return globMatch(plugin.settings.chapterFilePattern, file.name);
-}
-
-/**
- * Simple glob matcher supporting * and ? wildcards.
- * Uses iterative comparison to avoid ReDoS.
- */
-function globMatch(pattern: string, text: string): boolean {
-  let pi = 0;
-  let ti = 0;
-  let starPi = -1;
-  let matchTi = -1;
-
-  while (ti < text.length) {
-    if (
-      pi < pattern.length &&
-      (pattern[pi] === text[ti] || pattern[pi] === "?")
-    ) {
-      pi++;
-      ti++;
-    } else if (pi < pattern.length && pattern[pi] === "*") {
-      starPi = pi;
-      matchTi = ti;
-      pi++;
-    } else if (starPi !== -1) {
-      pi = starPi + 1;
-      matchTi++;
-      ti = matchTi;
-    } else {
-      return false;
-    }
-  }
-
-  while (pi < pattern.length && pattern[pi] === "*") {
-    pi++;
-  }
-
-  return pi === pattern.length;
-}
-
-/**
- * Count annotations in file content.
- */
-function countAnnotations(content: string): { actionable: number; passthrough: number } {
-  const ACTIONABLE_PATTERN =
-    /%%\s*(?:REWRITE|EXPAND|CUT|TONE|DIALOG|PLOT|PACING|CHARACTER)\s*:.*?%%/g;
-  const PASSTHROUGH_PATTERN = /%%\s*(?:NOTE|RESEARCH)\s*:.*?%%/g;
-
-  const actionableMatches = content.match(ACTIONABLE_PATTERN);
-  const passthroughMatches = content.match(PASSTHROUGH_PATTERN);
-
-  return {
-    actionable: actionableMatches ? actionableMatches.length : 0,
-    passthrough: passthroughMatches ? passthroughMatches.length : 0,
-  };
 }
 
 /**
@@ -258,15 +244,142 @@ function getAnnotatedChapters(plugin: PennyPlugin): TFile[] {
 // ============================================================================
 
 /**
+ * Build the RouteConfig from plugin settings.
+ * When useSameModelForAll is true, all tiers use the standard route.
+ */
+function buildRouteConfig(s: PennySettings): RouteConfig {
+  if (s.useSameModelForAll) {
+    return {
+      light: { ...s.routeStandard },
+      standard: { ...s.routeStandard },
+      heavy: { ...s.routeStandard },
+    };
+  }
+  return {
+    light: { ...s.routeLight },
+    standard: { ...s.routeStandard },
+    heavy: { ...s.routeHeavy },
+  };
+}
+
+/**
+ * Safely read a vault file by path. Returns empty string if the file
+ * does not exist or cannot be read.
+ */
+async function safeRead(plugin: PennyPlugin, path: string): Promise<string> {
+  if (!path) return "";
+  const file = plugin.app.vault.getAbstractFileByPath(path);
+  if (!file || !(file instanceof TFile)) return "";
+  try {
+    return await plugin.app.vault.read(file);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Read all markdown files in a folder, returning their contents as an array.
+ * Returns empty array if the folder does not exist.
+ */
+async function readFolderFiles(plugin: PennyPlugin, folderPath: string): Promise<string[]> {
+  if (!folderPath) return [];
+  const folder = plugin.app.vault.getAbstractFileByPath(folderPath);
+  if (!folder || !(folder instanceof TFolder)) return [];
+
+  const results: string[] = [];
+  for (const child of folder.children) {
+    if (child instanceof TFile && child.extension === "md") {
+      try {
+        const text = await plugin.app.vault.read(child);
+        results.push(text);
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * Gather all context files from the vault based on settings paths.
+ */
+async function gatherContextFiles(
+  plugin: PennyPlugin,
+  chapterContent: string,
+  characters: string[],
+): Promise<ContextFiles> {
+  const s = plugin.settings;
+
+  // Read voice tests and pre-filter by detected characters
+  let voiceTests = await safeRead(plugin, s.voiceTests);
+  if (voiceTests && characters.length > 0) {
+    voiceTests = selectVoiceTestSection(voiceTests, characters);
+  }
+
+  const styleGuide = await safeRead(plugin, s.styleGuide);
+  const outline = await safeRead(plugin, s.plotOutlinesFolder);
+  const seriesBible = await safeRead(plugin, s.seriesBible);
+  const themes = await safeRead(plugin, s.themesFile);
+  const characterFiles = await readFolderFiles(plugin, s.characterSheetsFolder);
+  const wikiFiles = await readFolderFiles(plugin, s.wikiFolder);
+
+  return {
+    chapter: chapterContent,
+    voiceTests,
+    styleGuide,
+    outline,
+    seriesBible,
+    themes,
+    characters: characterFiles,
+    wiki: wikiFiles,
+  };
+}
+
+/**
+ * Extract the chapter folder path from a chapter file.
+ * e.g. "04-drafts/book-1/ch-05/ch-05.v2.md" -> "04-drafts/book-1/ch-05"
+ */
+function chapterFolderPath(file: TFile): string {
+  const parts = file.path.split("/");
+  parts.pop(); // remove filename
+  return parts.join("/");
+}
+
+/**
+ * Extract a chapter identifier from a file.
+ * e.g. "ch-05.v2" -> "ch-05"
+ */
+function chapterIdFromFile(file: TFile): string {
+  return file.basename.replace(/\.v\d+$/, "");
+}
+
+/**
+ * Extract book identifier from the file path.
+ * e.g. "04-drafts/book-1/ch-05/ch-05.v2.md" -> "book-1"
+ */
+function bookIdFromFile(file: TFile): string {
+  const parts = file.path.split("/");
+  for (const p of parts) {
+    if (/^book-\d+$/.test(p)) return p;
+  }
+  return "book-1";
+}
+
+
+// Pipeline logic lives in ./pipeline.ts
+
+/**
  * Process annotations in a single chapter file.
- * This is a stub that will call into parser -> context -> drafter -> assembler
- * once those modules are implemented.
+ * Runs the full pipeline: parse -> context -> draft -> assemble -> version.
  */
 async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
   const content = await plugin.app.vault.read(file);
-  const counts = countAnnotations(content);
 
-  if (counts.actionable === 0) {
+  // Quick check: any actionable annotations at all?
+  const allAnnotations = parseAnnotations(content);
+  const actionableCount = allAnnotations.filter((a) => a.actionable).length;
+
+  if (actionableCount === 0) {
     new Notice(`PENNY: No actionable annotations in ${file.basename}.`);
     return;
   }
@@ -274,24 +387,93 @@ async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
   plugin.statusBar?.setProcessing();
 
   try {
-    // Determine which provider+model route applies.
-    // When the full pipeline is wired, each annotation will look up its own
-    // tier via TAG_COMPLEXITY.  For now, report routing config alongside counts.
     const s = plugin.settings;
-    const route = s.useSameModelForAll ? s.routeStandard : null;
-    const routeDesc = route
-      ? `${route.provider}/${route.model}`
-      : `Light: ${s.routeLight.provider}/${s.routeLight.model}, ` +
-        `Standard: ${s.routeStandard.provider}/${s.routeStandard.model}, ` +
-        `Heavy: ${s.routeHeavy.provider}/${s.routeHeavy.model}`;
+    const folderPath = chapterFolderPath(file);
+    const chapterId = chapterIdFromFile(file);
+    const bookId = bookIdFromFile(file);
 
-    // TODO: Wire into parser -> context -> drafter -> assembler pipeline
-    // For now, report what would be processed and which provider(s) would be used.
+    // Read version and state files
+    const versionContent = await safeRead(plugin, `${folderPath}/.version`);
+    const stateContent = await safeRead(plugin, `${folderPath}/.state.json`);
+
+    // Detect characters for voice test pre-filtering
+    const { frontmatter: fm } = parseFrontmatter(content);
+    const focusField = typeof fm.focus === "string" ? fm.focus : "";
+    const detectedChars = detectCharacters(content, focusField);
+
+    // Gather context files from vault
+    const contextFiles = await gatherContextFiles(plugin, content, detectedChars);
+
+    // Run the pipeline
+    const result = await runPipeline({
+      content,
+      versionContent,
+      stateContent,
+      contextFiles,
+      settings: s,
+      chapterId,
+      bookId,
+      getProvider: (name: string) => plugin.providerRegistry.get(name),
+    });
+
+    if (!result) {
+      new Notice(`PENNY: No new annotations to process in ${file.basename}.`);
+      return;
+    }
+
+    // Write new version file
+    const newVersionPath = `${folderPath}/${chapterId}.v${result.newVersion}.md`;
+    await plugin.app.vault.create(newVersionPath, result.newContent);
+
+    // Update .version file
+    const versionFile = plugin.app.vault.getAbstractFileByPath(`${folderPath}/.version`);
+    if (versionFile && versionFile instanceof TFile) {
+      await plugin.app.vault.modify(versionFile, String(result.newVersion));
+    } else {
+      await plugin.app.vault.create(`${folderPath}/.version`, String(result.newVersion));
+    }
+
+    // Update .state.json
+    const stateFile = plugin.app.vault.getAbstractFileByPath(`${folderPath}/.state.json`);
+    if (stateFile && stateFile instanceof TFile) {
+      await plugin.app.vault.modify(stateFile, result.stateJson);
+    } else {
+      await plugin.app.vault.create(`${folderPath}/.state.json`, result.stateJson);
+    }
+
+    // Write review note
+    const reviewPath = getReviewFilePath(s.reviewsFolder, bookId, chapterId, result.newVersion);
+    const reviewFolder = reviewPath.split("/").slice(0, -1).join("/");
+    await ensureFolder(plugin, reviewFolder);
+    await plugin.app.vault.create(reviewPath, result.reviewContent);
+
+    // Append to activity log
+    const logPath = getLogFilePath(s.activityLogFolder, bookId);
+    const logFolder = logPath.split("/").slice(0, -1).join("/");
+    await ensureFolder(plugin, logFolder);
+    const existingLog = plugin.app.vault.getAbstractFileByPath(logPath);
+    if (existingLog && existingLog instanceof TFile) {
+      const existing = await plugin.app.vault.read(existingLog);
+      await plugin.app.vault.modify(existingLog, existing + result.logLine);
+    } else {
+      await plugin.app.vault.create(logPath, result.logLine);
+    }
+
+    // Show completion notice
+    const errorNote = result.hadErrors ? " (with errors -- check review note)" : "";
     new Notice(
-      `PENNY: Found ${counts.actionable} actionable annotation(s) in ${file.basename}. ` +
-        `Routing: ${routeDesc}. ` +
-        `Processing pipeline not yet wired. (Parser, context, drafter, assembler modules needed.)`
+      `PENNY: Processed ${result.annotationsProcessed} annotation(s) in ${file.basename}. ` +
+        `Created v${result.newVersion}${errorNote}. (${result.durationMs}ms)`,
+      8000,
     );
+
+    // Auto-commit if enabled
+    if (s.autoCommitAfterProcessing) {
+      await gitCommit(plugin);
+      if (s.autoPushAfterCommit) {
+        await gitPush(plugin);
+      }
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     new Notice(`PENNY: Error processing ${file.basename} -- ${message}`);
@@ -309,20 +491,33 @@ async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
  */
 async function dryRun(plugin: PennyPlugin, file: TFile): Promise<void> {
   const content = await plugin.app.vault.read(file);
-  const counts = countAnnotations(content);
-  const total = counts.actionable + counts.passthrough;
+  const annotations = parseAnnotations(content);
+  const actionableCount = annotations.filter((a) => a.actionable).length;
+  const passthroughCount = annotations.filter((a) => !a.actionable).length;
+  const total = annotations.length;
 
   const lines: string[] = [
     `PENNY Dry Run: ${file.basename}`,
     `---`,
     `Total annotations: ${total}`,
-    `  Actionable: ${counts.actionable} (would be processed)`,
-    `  NOTE/RESEARCH: ${counts.passthrough} (would be preserved)`,
+    `  Actionable: ${actionableCount} (would be processed)`,
+    `  NOTE/RESEARCH: ${passthroughCount} (would be preserved)`,
   ];
 
-  if (counts.actionable === 0) {
+  if (actionableCount === 0) {
     lines.push("", "Nothing to process.");
   } else {
+    // Show per-tag breakdown
+    const tagCounts: Record<string, number> = {};
+    for (const a of annotations) {
+      if (a.actionable) {
+        tagCounts[a.tag] = (tagCounts[a.tag] || 0) + 1;
+      }
+    }
+    lines.push("", "Breakdown:");
+    for (const [tag, count] of Object.entries(tagCounts)) {
+      lines.push(`  ${tag}: ${count}`);
+    }
     lines.push("", `Running "Process this chapter" would create a new version.`);
   }
 
@@ -334,7 +529,9 @@ async function dryRun(plugin: PennyPlugin, file: TFile): Promise<void> {
  */
 async function showStatus(plugin: PennyPlugin, file: TFile): Promise<void> {
   const content = await plugin.app.vault.read(file);
-  const counts = countAnnotations(content);
+  const annotations = parseAnnotations(content);
+  const actionableCount = annotations.filter((a) => a.actionable).length;
+  const passthroughCount = annotations.filter((a) => !a.actionable).length;
 
   const versionMatch = file.basename.match(/\.v(\d+)$/);
   const version = versionMatch ? versionMatch[1] : "unknown";
@@ -343,8 +540,8 @@ async function showStatus(plugin: PennyPlugin, file: TFile): Promise<void> {
     `PENNY Status: ${file.basename}`,
     `---`,
     `Version: ${version}`,
-    `Actionable annotations: ${counts.actionable}`,
-    `Notes/research: ${counts.passthrough}`,
+    `Actionable annotations: ${actionableCount}`,
+    `Notes/research: ${passthroughCount}`,
     `---`,
     `Annotation syntax: %% TAG: instruction %%`,
     `Tags: REWRITE, EXPAND, CUT, TONE, DIALOG, PLOT, PACING, CHARACTER`,
@@ -402,10 +599,26 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
         // Write versioned file
         await plugin.app.vault.create(versionedFilePath, content);
 
+        // Verify the written file matches the original content
+        const versionedFile = plugin.app.vault.getAbstractFileByPath(versionedFilePath);
+        if (!versionedFile || !(versionedFile instanceof TFile)) {
+          new Notice(
+            `PENNY: Migration verification failed for ${bookChild.path} -- versioned file not found after write. Original left intact.`
+          );
+          continue;
+        }
+        const writtenContent = await plugin.app.vault.read(versionedFile);
+        if (writtenContent !== content) {
+          new Notice(
+            `PENNY: Migration verification failed for ${bookChild.path} -- written content does not match original. Original left intact.`
+          );
+          continue;
+        }
+
         // Write .version manifest
         await plugin.app.vault.create(versionFilePath, "1");
 
-        // Remove original flat file
+        // Remove original flat file only after verified write
         await plugin.app.vault.delete(bookChild);
 
         migratedCount++;
@@ -480,7 +693,7 @@ async function createNewChapter(plugin: PennyPlugin): Promise<void> {
     await plugin.app.vault.create(`${chapterFolderPath}/.version`, "1");
 
     // Open the new file
-    await plugin.app.workspace.getLeaf(false).openFile(newFile);
+    await plugin.app.workspace.getLeaf("tab").openFile(newFile);
     new Notice(`PENNY: Created ${chapterName} in ${bookFolderPath}.`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -545,7 +758,7 @@ async function createNewCharacter(plugin: PennyPlugin): Promise<void> {
 
   try {
     const newFile = await plugin.app.vault.create(filePath, content);
-    await plugin.app.workspace.getLeaf(false).openFile(newFile);
+    await plugin.app.workspace.getLeaf("tab").openFile(newFile);
     new Notice("PENNY: Created new character file. Rename it to match the character.");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -567,6 +780,9 @@ async function createNewCharacter(plugin: PennyPlugin): Promise<void> {
  */
 function gitExec(plugin: PennyPlugin, args: string[]): Promise<string> {
   const vaultPath = getVaultBasePath(plugin);
+  if (!vaultPath) {
+    return Promise.reject(new Error("Vault adapter is not a local filesystem"));
+  }
   return new Promise((resolve, reject) => {
     execFile(
       "git",
@@ -585,18 +801,81 @@ function gitExec(plugin: PennyPlugin, args: string[]): Promise<string> {
 
 /**
  * Get the vault's base filesystem path.
+ * Returns null if the adapter is not a FileSystemAdapter (e.g., a sync adapter).
  */
-function getVaultBasePath(plugin: PennyPlugin): string {
-  // The basePath property exists on FileSystemAdapter at runtime but is
-  // not part of the public Obsidian type definitions.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (plugin.app.vault.adapter as any).basePath as string;
+function getVaultBasePath(plugin: PennyPlugin): string | null {
+  if (!(plugin.app.vault.adapter instanceof FileSystemAdapter)) {
+    return null;
+  }
+  return plugin.app.vault.adapter.getBasePath();
+}
+
+/**
+ * Verify all prerequisites for git operations:
+ * 1. Vault uses a local FileSystemAdapter
+ * 2. Git is installed and on PATH
+ * 3. The vault directory is inside a git repository
+ *
+ * Returns the vault path on success, or null after showing a Notice on failure.
+ */
+async function verifyGitPrerequisites(plugin: PennyPlugin): Promise<string | null> {
+  const vaultPath = getVaultBasePath(plugin);
+  if (!vaultPath) {
+    new Notice("PENNY: Git operations require a local vault (not a sync adapter).");
+    return null;
+  }
+
+  // Check git is installed
+  try {
+    await gitExecRaw(["--version"]);
+  } catch {
+    new Notice("PENNY: Git is not installed or not on PATH.");
+    return null;
+  }
+
+  // Check vault is a git repo
+  try {
+    const result = await gitExecRaw(["-C", vaultPath, "rev-parse", "--is-inside-work-tree"]);
+    if (result.trim() !== "true") {
+      new Notice("PENNY: This vault is not a git repository. Run 'git init' first.");
+      return null;
+    }
+  } catch {
+    new Notice("PENNY: This vault is not a git repository. Run 'git init' first.");
+    return null;
+  }
+
+  return vaultPath;
+}
+
+/**
+ * Execute a raw git command (without vault path prefix).
+ * Used for prerequisite checks like `git --version`.
+ */
+function gitExecRaw(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "git",
+      args,
+      { timeout: 10000 },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr || error.message));
+        } else {
+          resolve(stdout.trim());
+        }
+      }
+    );
+  });
 }
 
 /**
  * Stage and commit changes with an auto-generated message.
  */
 async function gitCommit(plugin: PennyPlugin): Promise<void> {
+  const vaultPath = await verifyGitPrerequisites(plugin);
+  if (!vaultPath) return;
+
   try {
     // Check for changes
     const status = await gitExec(plugin, ["status", "--porcelain"]);
@@ -668,6 +947,9 @@ async function gitCommit(plugin: PennyPlugin): Promise<void> {
  * Push to the remote repository.
  */
 async function gitPush(plugin: PennyPlugin): Promise<void> {
+  const vaultPath = await verifyGitPrerequisites(plugin);
+  if (!vaultPath) return;
+
   try {
     await gitExec(plugin, ["push"]);
     new Notice("PENNY: Pushed to remote.");

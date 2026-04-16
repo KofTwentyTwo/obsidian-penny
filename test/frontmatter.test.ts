@@ -103,6 +103,21 @@ describe("parseFrontmatter", () => {
     const { frontmatter } = parseFrontmatter(content);
     expect(frontmatter.characters_in_scene).toEqual([]);
   });
+
+  it("parses frontmatter with CRLF line endings", () => {
+    const content = "---\r\ntype: chapter\r\nbook: 1\r\ntitle: Coffee\r\n---\r\nBody text.";
+    const { frontmatter, body } = parseFrontmatter(content);
+    expect(frontmatter.type).toBe("chapter");
+    expect(frontmatter.book).toBe(1);
+    expect(frontmatter.title).toBe("Coffee");
+    expect(body).toBe("Body text.");
+  });
+
+  it("parses array fields with CRLF line endings", () => {
+    const content = "---\r\ncharacters_in_scene:\r\n  - protagonist\r\n  - tim\r\n---\r\nBody.";
+    const { frontmatter } = parseFrontmatter(content);
+    expect(frontmatter.characters_in_scene).toEqual(["protagonist", "tim"]);
+  });
 });
 
 describe("serializeFrontmatter", () => {
@@ -150,6 +165,49 @@ describe("serializeFrontmatter", () => {
     const result = serializeFrontmatter(frontmatter, "Body.");
     expect(result).not.toContain("title:");
     expect(result).not.toContain("focus:");
+  });
+
+  it("quotes string values containing YAML-unsafe characters", () => {
+    const frontmatter = {
+      title: "Chapter: The Beginning",
+      note: "see #section for details",
+      tag: "[important]",
+      ref: "{key: value}",
+      special: "@mention this",
+      anchor: "&anchor",
+      star: "*bold*",
+      bang: "!warning",
+    };
+
+    const result = serializeFrontmatter(frontmatter, "Body.");
+    // Values with : # [ ] { } and leading @!*& should be double-quoted
+    expect(result).toContain('title: "Chapter: The Beginning"');
+    expect(result).toContain('note: "see #section for details"');
+    expect(result).toContain('tag: "[important]"');
+    expect(result).toContain('ref: "{key: value}"');
+    expect(result).toContain('special: "@mention this"');
+    expect(result).toContain('anchor: "&anchor"');
+    expect(result).toContain('star: "*bold*"');
+    expect(result).toContain('bang: "!warning"');
+  });
+
+  it("quotes string values with leading/trailing whitespace", () => {
+    const frontmatter = { title: "  padded  " };
+    const result = serializeFrontmatter(frontmatter, "Body.");
+    expect(result).toContain('title: "  padded  "');
+  });
+
+  it("escapes internal double quotes when quoting", () => {
+    const frontmatter = { title: 'She said "hello"' };
+    const result = serializeFrontmatter(frontmatter, "Body.");
+    expect(result).toContain('title: "She said \\"hello\\""');
+  });
+
+  it("does not quote safe string values", () => {
+    const frontmatter = { title: "Rabbit" };
+    const result = serializeFrontmatter(frontmatter, "Body.");
+    expect(result).toContain("title: Rabbit");
+    expect(result).not.toContain('"Rabbit"');
   });
 
   it("roundtrips parse -> serialize -> parse", () => {

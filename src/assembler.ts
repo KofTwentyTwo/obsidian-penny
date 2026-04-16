@@ -9,8 +9,8 @@
 import type { AnnotatedSection } from "./types";
 import { PASSTHROUGH_TAGS } from "./types";
 
-/** Regex matching a single annotation comment: %% TAG: instruction %% */
-const ANNOTATION_RE = /%%\s*([A-Z]+)\s*:\s*(.*?)\s*%%/g;
+/** Non-global regex pattern for matching annotations. A new RegExp is created per use. */
+const ANNOTATION_PATTERN = /%%\s*([A-Z]+)\s*:\s*(.*?)\s*%%/;
 
 function wordCount(text: string): number {
   const trimmed = text.trim();
@@ -74,18 +74,16 @@ export function assembleNewVersion(
   // Passthrough annotations (NOTE, RESEARCH) are kept.
   const cleaned = lines.filter((line) => {
     // Check if this line is purely an annotation (no other content).
-    const withoutAnnotations = line.replace(ANNOTATION_RE, "").trim();
+    const withoutAnnotations = line.replace(new RegExp(ANNOTATION_PATTERN.source, "g"), "").trim();
     if (withoutAnnotations.length > 0) {
       // Line has content beyond annotations.  Strip only actionable annotations.
       return true;
     }
     // Line is purely annotation(s).  Keep it only if ALL annotations on it
     // are passthrough.
-    ANNOTATION_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
     let hasActionable = false;
     let hasAny = false;
-    while ((m = ANNOTATION_RE.exec(line)) !== null) {
+    for (const m of line.matchAll(new RegExp(ANNOTATION_PATTERN.source, "g"))) {
       hasAny = true;
       if (!isPassthrough(m[1])) {
         hasActionable = true;
@@ -100,20 +98,17 @@ export function assembleNewVersion(
   // For lines that contain inline actionable annotations mixed with text,
   // strip the annotation portion but keep the text.
   const final = cleaned.map((line) => {
-    ANNOTATION_RE.lastIndex = 0;
-    if (!ANNOTATION_RE.test(line)) return line;
+    if (!ANNOTATION_PATTERN.test(line)) return line;
 
     // Check if any annotation on this line is actionable.
-    ANNOTATION_RE.lastIndex = 0;
     let hasActionable = false;
-    let m: RegExpExecArray | null;
-    while ((m = ANNOTATION_RE.exec(line)) !== null) {
+    for (const m of line.matchAll(new RegExp(ANNOTATION_PATTERN.source, "g"))) {
       if (!isPassthrough(m[1])) hasActionable = true;
     }
     if (!hasActionable) return line;
 
     // Strip only actionable annotations, keep passthrough.
-    return line.replace(/%%\s*([A-Z]+)\s*:\s*.*?\s*%%/g, (full, tag) => {
+    return line.replace(new RegExp(ANNOTATION_PATTERN.source, "g"), (full, tag) => {
       if (isPassthrough(tag)) return full;
       return "";
     }).trimEnd();

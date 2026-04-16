@@ -107,9 +107,28 @@ describe("readState", () => {
       ],
     });
     const state = readState(json);
-    expect(state.processedAnnotations).toHaveLength(2);
+    // Non-object entries ("not an object") should be filtered out
+    expect(state.processedAnnotations).toHaveLength(1);
     // Should coerce to strings/defaults.
     expect(state.processedAnnotations[0].hash).toBe("123");
+  });
+
+  it("filters out null, number, and string entries from processedAnnotations", () => {
+    const json = JSON.stringify({
+      version: 2,
+      processedAnnotations: [
+        null,
+        42,
+        "string entry",
+        true,
+        { hash: "valid123", tag: "REWRITE", line: 5, processedInVersion: 1 },
+        undefined,
+      ],
+    });
+    const state = readState(json);
+    // Only the valid object should remain
+    expect(state.processedAnnotations).toHaveLength(1);
+    expect(state.processedAnnotations[0].hash).toBe("valid123");
   });
 });
 

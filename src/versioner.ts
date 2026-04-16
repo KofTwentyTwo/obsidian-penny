@@ -44,7 +44,9 @@ export function readState(stateContent: string): VersionState {
       version: typeof parsed.version === "number" ? parsed.version : 0,
       lastProcessed: typeof parsed.lastProcessed === "string" ? parsed.lastProcessed : null,
       processedAnnotations: Array.isArray(parsed.processedAnnotations)
-        ? parsed.processedAnnotations.map((pa: Record<string, unknown>) => ({
+        ? parsed.processedAnnotations
+          .filter((pa: unknown) => typeof pa === "object" && pa !== null)
+          .map((pa: Record<string, unknown>) => ({
             hash: String(pa.hash ?? ""),
             tag: String(pa.tag ?? ""),
             line: typeof pa.line === "number" ? pa.line : 0,

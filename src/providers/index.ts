@@ -30,7 +30,7 @@ export type {
 } from "./router";
 
 // Registry
-export { ProviderRegistry, registry } from "./registry";
+export { ProviderRegistry } from "./registry";
 
 // Provider implementations
 export { AnthropicProvider } from "./anthropic";

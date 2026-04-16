@@ -119,6 +119,41 @@ describe("AnthropicProvider", () => {
       expect(body.messages[0].content).toBe("Rewrite this passage with more tension.");
     });
 
+    it("includes thinking for opus-4-6", async () => {
+      const responseText = anthropicResponse("OK");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      await provider.complete(makeRequest({ model: "claude-opus-4-6" }));
+
+      const body = JSON.parse(calls[0].body!);
+      expect(body.thinking).toBeDefined();
+      expect(body.thinking.type).toBe("enabled");
+    });
+
+    it("includes thinking for sonnet-4-6", async () => {
+      const responseText = anthropicResponse("OK");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      await provider.complete(makeRequest({ model: "claude-sonnet-4-6" }));
+
+      const body = JSON.parse(calls[0].body!);
+      expect(body.thinking).toBeDefined();
+      expect(body.thinking.type).toBe("enabled");
+    });
+
+    it("does NOT include thinking for haiku-4-5", async () => {
+      const responseText = anthropicResponse("OK");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      await provider.complete(makeRequest({ model: "claude-haiku-4-5" }));
+
+      const body = JSON.parse(calls[0].body!);
+      expect(body.thinking).toBeUndefined();
+    });
+
     it("sends correct headers", async () => {
       const responseText = anthropicResponse("OK");
       const { fn, calls } = mockHttp({ text: responseText });
@@ -211,6 +246,58 @@ describe("AnthropicProvider", () => {
 
       const body = JSON.parse(calls[0].body!);
       expect(body.model).toBe("claude-opus-4-6");
+    });
+
+    it("throws on 400 response with error message", async () => {
+      const errorResponse = JSON.stringify({
+        error: { type: "invalid_request_error", message: "max_tokens must be positive" },
+      });
+      const { fn } = mockHttp({ status: 400, text: errorResponse });
+      const provider = new AnthropicProvider(fn);
+
+      await expect(provider.complete(makeRequest())).rejects.toThrow(
+        "Anthropic API error (400): max_tokens must be positive"
+      );
+    });
+
+    it("throws 'Invalid API key' on 401 response", async () => {
+      const errorResponse = JSON.stringify({
+        error: { type: "authentication_error", message: "invalid x-api-key" },
+      });
+      const { fn } = mockHttp({ status: 401, text: errorResponse });
+      const provider = new AnthropicProvider(fn);
+
+      await expect(provider.complete(makeRequest())).rejects.toThrow("Invalid API key");
+      await expect(provider.complete(makeRequest())).rejects.toThrow("401");
+    });
+
+    it("throws 'Rate limited' on 429 response", async () => {
+      const errorResponse = JSON.stringify({
+        error: { type: "rate_limit_error", message: "Too many requests" },
+      });
+      const { fn } = mockHttp({ status: 429, text: errorResponse });
+      const provider = new AnthropicProvider(fn);
+
+      await expect(provider.complete(makeRequest())).rejects.toThrow("Rate limited");
+      await expect(provider.complete(makeRequest())).rejects.toThrow("429");
+    });
+
+    it("throws on 500 response with server error text", async () => {
+      const errorResponse = JSON.stringify({
+        error: { type: "api_error", message: "Internal server error" },
+      });
+      const { fn } = mockHttp({ status: 500, text: errorResponse });
+      const provider = new AnthropicProvider(fn);
+
+      await expect(provider.complete(makeRequest())).rejects.toThrow("Anthropic API error (500)");
+      await expect(provider.complete(makeRequest())).rejects.toThrow("Internal server error");
+    });
+
+    it("throws with raw text when error response is not valid JSON", async () => {
+      const { fn } = mockHttp({ status: 502, text: "Bad Gateway" });
+      const provider = new AnthropicProvider(fn);
+
+      await expect(provider.complete(makeRequest())).rejects.toThrow("Anthropic API error (502): Bad Gateway");
     });
   });
 

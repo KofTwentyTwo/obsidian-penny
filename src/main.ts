@@ -14,6 +14,7 @@ import { PennyStatusBar } from "./statusbar";
 import { registerCommands } from "./commands";
 import { DEFAULT_SETTINGS, migrateSettings } from "./types";
 import { createRegistry } from "./providers";
+import { globMatch } from "./utils";
 import type { ProviderRegistry } from "./providers/registry";
 import type { HttpRequestParam } from "./providers/service";
 import type { PennySettings } from "./types";
@@ -50,8 +51,11 @@ export default class PennyPlugin extends Plugin {
   /** Reference to the file-modify event, for cleanup */
   private saveEventRef: ReturnType<typeof this.app.vault.on> | null = null;
 
-  /** Whether auto-processing is currently in progress */
-  private autoProcessing = false;
+  /** Set of file paths currently being processed (prevents re-entrant processing) */
+  processingFiles: Set<string> = new Set();
+
+  /** Pending debounce timers keyed by file path */
+  private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -155,6 +159,12 @@ export default class PennyPlugin extends Plugin {
       this.saveEventRef = null;
     }
 
+    // Clear any pending debounce timers
+    for (const timer of this.debounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.debounceTimers.clear();
+
     if (!this.settings.autoProcessOnSave) return;
 
     this.saveEventRef = this.app.vault.on("modify", (file) => {
@@ -163,16 +173,24 @@ export default class PennyPlugin extends Plugin {
       // Only trigger for chapter files
       if (!this.isChapterFile(file)) return;
 
-      // Debounce: skip if already auto-processing
-      if (this.autoProcessing) return;
+      // Skip files currently being processed
+      if (this.processingFiles.has(file.path)) return;
 
-      this.autoProcessing = true;
-      executeCommand(this.app, "penny:process-chapter");
+      // Debounce: cancel any pending timer for this file, then set a new one
+      const existing = this.debounceTimers.get(file.path);
+      if (existing) {
+        clearTimeout(existing);
+      }
 
-      // Reset the flag after a short delay to allow the command to complete
-      setTimeout(() => {
-        this.autoProcessing = false;
-      }, 1000);
+      const timer = setTimeout(() => {
+        this.debounceTimers.delete(file.path);
+        // Double-check the file is still not being processed
+        if (!this.processingFiles.has(file.path)) {
+          executeCommand(this.app, "penny:process-chapter");
+        }
+      }, 2000);
+
+      this.debounceTimers.set(file.path, timer);
     });
   }
 
@@ -183,41 +201,4 @@ export default class PennyPlugin extends Plugin {
   private isChapterFile(file: TFile): boolean {
     return globMatch(this.settings.chapterFilePattern, file.name);
   }
-}
-
-/**
- * Simple glob matcher supporting * and ? wildcards.
- * Uses iterative comparison to avoid ReDoS.
- */
-function globMatch(pattern: string, text: string): boolean {
-  let pi = 0;
-  let ti = 0;
-  let starPi = -1;
-  let matchTi = -1;
-
-  while (ti < text.length) {
-    if (
-      pi < pattern.length &&
-      (pattern[pi] === text[ti] || pattern[pi] === "?")
-    ) {
-      pi++;
-      ti++;
-    } else if (pi < pattern.length && pattern[pi] === "*") {
-      starPi = pi;
-      matchTi = ti;
-      pi++;
-    } else if (starPi !== -1) {
-      pi = starPi + 1;
-      matchTi++;
-      ti = matchTi;
-    } else {
-      return false;
-    }
-  }
-
-  while (pi < pattern.length && pattern[pi] === "*") {
-    pi++;
-  }
-
-  return pi === pattern.length;
 }

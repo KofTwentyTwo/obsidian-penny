@@ -31,6 +31,3 @@ export class ProviderRegistry {
     return Array.from(this.providers.keys());
   }
 }
-
-/** Singleton registry instance for the plugin. */
-export const registry = new ProviderRegistry();

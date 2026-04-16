@@ -2,7 +2,7 @@
 
 Your AI co-author for Obsidian. PENNY processes editorial annotations in your novel chapters, revises prose while enforcing your voice rules, and manages versioned drafts -- all without leaving Obsidian. It uses Claude (via the Anthropic API) to rewrite, expand, cut, adjust tone, fix dialogue, and more, guided by your style guide and voice tests.
 
-![Screenshot placeholder -- TODO](docs/images/screenshot-placeholder.png)
+<!-- Screenshots coming soon -->
 
 ## What PENNY Does
 

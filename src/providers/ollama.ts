@@ -43,6 +43,10 @@ export class OllamaProvider implements LLMService {
         method: "GET",
       });
 
+      if (response.status < 200 || response.status >= 300) {
+        throw this.buildHttpError(response.status, response.text, endpoint);
+      }
+
       const data = JSON.parse(response.text);
       if (data && Array.isArray(data.models)) {
         return data.models.map((m: Record<string, unknown>) => ({
@@ -54,8 +58,15 @@ export class OllamaProvider implements LLMService {
         }));
       }
       return [];
-    } catch {
-      // If Ollama is not running or endpoint is wrong, return empty list.
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("Ollama error")) {
+        throw err;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("ECONNREFUSED") || message.includes("fetch failed") || message.includes("Connection refused")) {
+        throw new Error(`Cannot connect to Ollama at ${endpoint}. Is Ollama running?`);
+      }
+      // For other errors (network issues, etc.), return empty list.
       return [];
     }
   }
@@ -80,12 +91,25 @@ export class OllamaProvider implements LLMService {
       headers["Authorization"] = `Bearer ${request.apiKey}`;
     }
 
-    const response = await this.httpFn({
-      url: `${endpoint}/v1/chat/completions`,
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
+    let response;
+    try {
+      response = await this.httpFn({
+        url: `${endpoint}/v1/chat/completions`,
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("ECONNREFUSED") || message.includes("fetch failed") || message.includes("Connection refused")) {
+        throw new Error(`Cannot connect to Ollama at ${endpoint}. Is Ollama running?`);
+      }
+      throw err;
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      throw this.buildHttpError(response.status, response.text, endpoint);
+    }
 
     return this.parseResponse(response.text, request.model);
   }
@@ -107,11 +131,28 @@ export class OllamaProvider implements LLMService {
       if (response.status >= 200 && response.status < 300) {
         return null; // success
       }
-      return `Ollama returned status ${response.status}`;
+      return this.buildHttpError(response.status, response.text, endpoint).message;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("ECONNREFUSED") || message.includes("fetch failed") || message.includes("Connection refused")) {
+        return `Cannot connect to Ollama at ${endpoint}. Is Ollama running?`;
+      }
       return `Ollama connection failed: ${message}. Is Ollama running at ${endpoint}?`;
     }
+  }
+
+  /**
+   * Build a descriptive Error from an Ollama HTTP error response.
+   */
+  private buildHttpError(status: number, responseText: string, _endpoint: string): Error {
+    let detail: string;
+    try {
+      const data = JSON.parse(responseText);
+      detail = data?.error ?? data?.message ?? responseText;
+    } catch {
+      detail = responseText;
+    }
+    return new Error(`Ollama error (${status}): ${detail}`);
   }
 
   /**

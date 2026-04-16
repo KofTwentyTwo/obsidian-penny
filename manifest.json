@@ -3,7 +3,7 @@
   "name": "PENNY - Prose Co-Author",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "PENNY (Prose Engine for Narrative, Notes, and Yarns) - AI-powered prose revision agent that processes editorial annotations and enforces voice consistency. Uses Claude API.",
+  "description": "PENNY (Prose Engine for Narrative, Notes, and Yarns) - AI-powered prose revision agent. Supports Claude API and Ollama local models. Processes editorial annotations and enforces voice consistency.",
   "author": "James Maes",
   "authorUrl": "https://github.com/KofTwentyTwo",
   "isDesktopOnly": true
