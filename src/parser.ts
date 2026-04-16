@@ -13,14 +13,22 @@ import {
   ALL_TAGS,
 } from "./types";
 
-/** Non-global regex pattern for matching annotations. A new RegExp is created per use. */
+/** Single-line annotation pattern. */
 const ANNOTATION_PATTERN = /%%\s*([A-Z]+)\s*:\s*(.*?)\s*%%/;
 
+/** Multi-line annotation: opening %% TAG: ... without closing %% on same line */
+const MULTILINE_OPEN = /%%\s*([A-Z]+)\s*:\s*(.*)/;
+const MULTILINE_CLOSE = /(.*)%%/;
+
 /**
- * Strip all annotation markers from a string.
+ * Strip all annotation markers from a string (single-line and multi-line).
  */
 function stripAnnotations(text: string): string {
-  return text.replace(new RegExp(ANNOTATION_PATTERN.source, "g"), "");
+  // Strip single-line annotations first
+  let result = text.replace(new RegExp(ANNOTATION_PATTERN.source, "g"), "");
+  // Strip multi-line annotation fragments (lines that are part of %% ... %% blocks)
+  result = result.replace(/%%[\s\S]*?%%/g, "");
+  return result;
 }
 
 /**
@@ -140,10 +148,13 @@ export function parseAnnotations(content: string): AnnotatedSection[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // Create a fresh global regex for each line to avoid shared state issues
+
+    // Try single-line annotations first
     const lineRegex = new RegExp(ANNOTATION_PATTERN.source, "g");
+    let foundSingleLine = false;
 
     for (const match of line.matchAll(lineRegex)) {
+      foundSingleLine = true;
       const tag = match[1];
       const instruction = match[2].trim();
 
@@ -186,6 +197,68 @@ export function parseAnnotations(content: string): AnnotatedSection[] {
         actionable,
         hash,
       });
+    }
+
+    // If no single-line match, check for multi-line annotation opening
+    if (!foundSingleLine) {
+      const openMatch = line.match(MULTILINE_OPEN);
+      if (openMatch && !line.includes("%%", line.indexOf("%%") + 2)) {
+        // Found opening %% TAG: ... without closing %% on this line
+        const tag = openMatch[1];
+        const instructionParts = [openMatch[2].trim()];
+        let closeLine = i;
+
+        // Scan forward for closing %%
+        for (let j = i + 1; j < lines.length && j < i + 20; j++) {
+          const cl = lines[j];
+          const closeMatch = cl.match(MULTILINE_CLOSE);
+          if (closeMatch) {
+            instructionParts.push(closeMatch[1].trim());
+            closeLine = j;
+            break;
+          } else {
+            instructionParts.push(cl.trim());
+          }
+        }
+
+        const instruction = instructionParts.join(" ").trim();
+        if (isValidTag(tag) && instruction.length > 0) {
+          // Use the line AFTER the closing %% as the annotation target
+          const annotationLineIndex = closeLine;
+          const { scope, lineStart, lineEnd } = resolveScope(lines, annotationLineIndex);
+
+          let originalText: string;
+          if (scope === "inline") {
+            originalText = stripAnnotations(lines[annotationLineIndex]).trim();
+          } else {
+            const passageLines: string[] = [];
+            for (let j = lineStart; j <= lineEnd; j++) {
+              const strippedLine = stripAnnotations(lines[j]).trim();
+              if (strippedLine.length > 0 || isBlank(lines[j])) {
+                passageLines.push(stripAnnotations(lines[j]).trimEnd());
+              }
+            }
+            originalText = passageLines.join("\n").trim();
+          }
+
+          const actionable = isActionableTag(tag);
+          const hash = hashAnnotation(tag, instruction, originalText);
+
+          results.push({
+            tag: tag as AnnotationTag,
+            instruction,
+            originalText,
+            lineStart,
+            lineEnd,
+            scope,
+            actionable,
+            hash,
+          });
+
+          // Skip past the multi-line annotation
+          i = closeLine;
+        }
+      }
     }
   }
 
