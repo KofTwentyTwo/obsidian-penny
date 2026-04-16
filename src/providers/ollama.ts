@@ -32,6 +32,7 @@ const TOKEN_MULTIPLIER = 1.0;
 export class OllamaProvider implements LLMService {
   readonly name = "ollama";
   readonly requiresApiKey = false;
+  readonly tokenMultiplier = 1.0;
 
   constructor(private httpFn: HttpFn) {}
 

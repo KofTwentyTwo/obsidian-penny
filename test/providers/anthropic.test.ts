@@ -188,6 +188,32 @@ describe("AnthropicProvider", () => {
       expect(headers["x-api-key"]).toBe("sk-test-key-123");
       expect(headers["anthropic-version"]).toBe("2023-06-01");
       expect(headers["content-type"]).toBe("application/json");
+      // No beta header when thinking is not enabled
+      expect(headers["anthropic-beta"]).toBeUndefined();
+    });
+
+    it("includes anthropic-beta header when thinking is enabled", async () => {
+      const responseText = anthropicResponse("OK");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      await provider.complete(makeRequest({ model: "claude-opus-4-6", useThinking: true }));
+
+      expect(calls).toHaveLength(1);
+      const headers = calls[0].headers!;
+      expect(headers["anthropic-beta"]).toBe("interleaved-thinking-2025-05-14");
+    });
+
+    it("does NOT include anthropic-beta header when thinking is disabled", async () => {
+      const responseText = anthropicResponse("OK");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      await provider.complete(makeRequest({ model: "claude-opus-4-6", useThinking: false }));
+
+      expect(calls).toHaveLength(1);
+      const headers = calls[0].headers!;
+      expect(headers["anthropic-beta"]).toBeUndefined();
     });
 
     it("calls the correct API URL", async () => {

@@ -61,6 +61,7 @@ const TOKEN_MULTIPLIER = 1.33;
 export class AnthropicProvider implements LLMService {
   readonly name = "anthropic";
   readonly requiresApiKey = true;
+  readonly tokenMultiplier = 1.33;
 
   constructor(private httpFn: HttpFn) {}
 
