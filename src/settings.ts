@@ -5,7 +5,7 @@
  * voice rules, behavior, and git integration.
  */
 
-import { PluginSettingTab, Setting, App, Notice, TFolder, TFile } from "obsidian";
+import { PluginSettingTab, Setting, App, Notice, TFolder, TFile, FuzzySuggestModal } from "obsidian";
 import type PennyPlugin from "./main";
 import { DEFAULT_SYSTEM_PROMPT } from "./types";
 import { ANTHROPIC_MODELS } from "./providers/anthropic";
@@ -20,6 +20,8 @@ import { resolveModel } from "./providers/router";
  */
 export class PennySettingTab extends PluginSettingTab {
   plugin: PennyPlugin;
+  /** Cached Ollama model list, populated on settings tab open */
+  private ollamaModels: Array<{ id: string; name: string }> = [];
 
   constructor(app: App, plugin: PennyPlugin) {
     super(app, plugin);
@@ -363,22 +365,40 @@ export class PennySettingTab extends PluginSettingTab {
         });
       });
     } else {
-      setting.addText((text) =>
-        text
-          .setPlaceholder("e.g. llama3.2, mistral, deepseek-coder")
-          .setValue(route.model)
-          .then((t) => {
-            t.inputEl.style.width = "250px";
-          })
-          .onChange(async (value) => {
-            route.model = value.trim();
+      // Ollama: dropdown if models are cached, text input as fallback
+      if (this.ollamaModels.length > 0) {
+        setting.addDropdown((dropdown) => {
+          dropdown.addOption("", "Select a model...");
+          for (const m of this.ollamaModels) {
+            dropdown.addOption(m.id, m.name);
+          }
+          dropdown.setValue(route.model);
+          dropdown.onChange(async (value) => {
+            route.model = value;
             if (mirrorAll) {
               this.plugin.settings.routeLight = { ...route };
               this.plugin.settings.routeHeavy = { ...route };
             }
             await this.plugin.saveSettings();
-          })
-      );
+          });
+        });
+      } else {
+        // Fallback: text input when Ollama models haven't been fetched yet
+        setting.addText((text) =>
+          text
+            .setPlaceholder("e.g. llama3.2, mistral, deepseek-coder")
+            .setValue(route.model)
+            .then((t) => { t.inputEl.style.width = "250px"; })
+            .onChange(async (value) => {
+              route.model = value.trim();
+              if (mirrorAll) {
+                this.plugin.settings.routeLight = { ...route };
+                this.plugin.settings.routeHeavy = { ...route };
+              }
+              await this.plugin.saveSettings();
+            })
+        );
+      }
     }
   }
 
@@ -481,7 +501,10 @@ export class PennySettingTab extends PluginSettingTab {
 
     for (const ps of pathSettings) {
       const key = ps.key as string;
-      new Setting(details)
+      const isFolder = ps.name.toLowerCase().includes("folder");
+      let textInput: HTMLInputElement | null = null;
+
+      const s = new Setting(details)
         .setName(ps.name)
         .setDesc(ps.desc)
         .addText((text) =>
@@ -492,12 +515,39 @@ export class PennySettingTab extends PluginSettingTab {
                 (this.plugin.settings as unknown as Record<string, string>)[key]
               )
             )
+            .then((t) => { textInput = t.inputEl; })
             .onChange(async (value) => {
               (this.plugin.settings as unknown as Record<string, string>)[key] =
                 value.trim();
               await this.plugin.saveSettings();
             })
         );
+
+      // Add a browse button that opens a folder/file picker
+      s.addButton((button) =>
+        button.setButtonText("Browse").onClick(() => {
+          if (isFolder) {
+            const folders = this.plugin.app.vault.getAllLoadedFiles()
+              .filter((f): f is TFolder => f instanceof TFolder)
+              .map((f) => f.path)
+              .sort();
+            new PathSuggestModal(this.app, folders, async (chosen) => {
+              (this.plugin.settings as unknown as Record<string, string>)[key] = chosen;
+              await this.plugin.saveSettings();
+              if (textInput) textInput.value = chosen;
+            }).open();
+          } else {
+            const files = this.plugin.app.vault.getMarkdownFiles()
+              .map((f) => f.path)
+              .sort();
+            new PathSuggestModal(this.app, files, async (chosen) => {
+              (this.plugin.settings as unknown as Record<string, string>)[key] = chosen;
+              await this.plugin.saveSettings();
+              if (textInput) textInput.value = chosen;
+            }).open();
+          }
+        })
+      );
     }
   }
 
@@ -677,6 +727,8 @@ export class PennySettingTab extends PluginSettingTab {
         endpoint: this.plugin.settings.ollamaEndpoint,
         apiKey: this.plugin.settings.ollamaApiKey,
       });
+      // Cache for use in route dropdowns
+      this.ollamaModels = models.map((m) => ({ id: m.id, name: m.name }));
       containerEl.empty();
       if (models.length === 0) {
         containerEl.createEl("div", {
@@ -752,7 +804,9 @@ export class PennySettingTab extends PluginSettingTab {
         `PENNY: Detected ${detectedCount} path(s):\n${detected.join("\n")}`,
         8000,
       );
-      this.display(); // Re-render to show detected paths
+      // Don't call this.display() here -- it closes the section.
+      // Settings are saved; user sees the detected paths in the Notice.
+      // They can collapse/reopen the section to see updated values.
     } else {
       new Notice(
         "PENNY: No project structure detected, or all paths are already configured.",
@@ -902,5 +956,32 @@ export class PennySettingTab extends PluginSettingTab {
     const tip = details.createEl("p", { cls: "penny-help-tip" });
     tip.createEl("strong", { text: "Tip: " });
     tip.appendText("Press Cmd/Ctrl+P and type \"PENNY\" to see all commands.");
+  }
+}
+
+/**
+ * Simple fuzzy suggest modal for picking a vault path (folder or file).
+ */
+class PathSuggestModal extends FuzzySuggestModal<string> {
+  private paths: string[];
+  private onChoose: (path: string) => void;
+
+  constructor(app: App, paths: string[], onChoose: (path: string) => void) {
+    super(app);
+    this.paths = paths;
+    this.onChoose = onChoose;
+    this.setPlaceholder("Type to search...");
+  }
+
+  getItems(): string[] {
+    return this.paths;
+  }
+
+  getItemText(item: string): string {
+    return item;
+  }
+
+  onChooseItem(item: string): void {
+    this.onChoose(item);
   }
 }
