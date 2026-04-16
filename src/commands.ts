@@ -34,7 +34,7 @@ export function registerCommands(plugin: PennyPlugin): void {
       if (!file || !isChapterFile(file, plugin)) return false;
       if (checking) return true;
 
-      if (!requireApiKey(plugin)) return;
+      if (!requireProvider(plugin)) return;
       processChapter(plugin, file);
     },
   });
@@ -44,7 +44,7 @@ export function registerCommands(plugin: PennyPlugin): void {
     id: "penny:process-all",
     name: "Process all chapters",
     callback: async () => {
-      if (!requireApiKey(plugin)) return;
+      if (!requireProvider(plugin)) return;
 
       const chapters = getAnnotatedChapters(plugin);
       if (chapters.length === 0) {
@@ -147,15 +147,32 @@ export function registerCommands(plugin: PennyPlugin): void {
 // ============================================================================
 
 /**
- * Check whether the API key is configured. Shows a notice if not.
+ * Check whether at least one LLM provider is configured.
+ *
+ * For Anthropic, an API key is required. For Ollama, just the endpoint
+ * (defaulted). Shows a notice if nothing is usable.
  */
-function requireApiKey(plugin: PennyPlugin): boolean {
-  if (!plugin.settings.apiKey) {
+function requireProvider(plugin: PennyPlugin): boolean {
+  const s = plugin.settings;
+  const hasAnthropic = !!s.anthropicApiKey;
+  const hasOllama = !!s.ollamaEndpoint;
+
+  if (!hasAnthropic && !hasOllama) {
     new Notice(
-      "PENNY: No API key configured. Open Settings > PENNY to add your Anthropic API key."
+      "PENNY: No LLM provider configured. Open Settings > PENNY to add an Anthropic API key or configure Ollama."
     );
     return false;
   }
+
+  // Check that the routed provider is actually configured
+  const route = s.routeStandard; // representative route
+  if (route.provider === "anthropic" && !hasAnthropic) {
+    new Notice(
+      "PENNY: Model routing uses Anthropic but no API key is set. Open Settings > PENNY > Providers."
+    );
+    return false;
+  }
+
   return true;
 }
 
@@ -257,10 +274,22 @@ async function processChapter(plugin: PennyPlugin, file: TFile): Promise<void> {
   plugin.statusBar?.setProcessing();
 
   try {
+    // Determine which provider+model route applies.
+    // When the full pipeline is wired, each annotation will look up its own
+    // tier via TAG_COMPLEXITY.  For now, report routing config alongside counts.
+    const s = plugin.settings;
+    const route = s.useSameModelForAll ? s.routeStandard : null;
+    const routeDesc = route
+      ? `${route.provider}/${route.model}`
+      : `Light: ${s.routeLight.provider}/${s.routeLight.model}, ` +
+        `Standard: ${s.routeStandard.provider}/${s.routeStandard.model}, ` +
+        `Heavy: ${s.routeHeavy.provider}/${s.routeHeavy.model}`;
+
     // TODO: Wire into parser -> context -> drafter -> assembler pipeline
-    // For now, report what would be processed
+    // For now, report what would be processed and which provider(s) would be used.
     new Notice(
       `PENNY: Found ${counts.actionable} actionable annotation(s) in ${file.basename}. ` +
+        `Routing: ${routeDesc}. ` +
         `Processing pipeline not yet wired. (Parser, context, drafter, assembler modules needed.)`
     );
   } catch (err) {

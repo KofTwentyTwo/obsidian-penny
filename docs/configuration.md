@@ -2,34 +2,89 @@
 
 PENNY is configured through the Obsidian settings tab and optionally through a `PENNY.md` file for per-project overrides. This guide explains every setting.
 
-## API Settings
+## Provider Settings
 
-### API Key
+PENNY supports multiple LLM providers. Configure at least one.
+
+### Anthropic API Key
 
 | Field | Value |
 |-------|-------|
 | Type | Password text |
 | Default | (empty) |
-| Required | Yes |
+| Required | Only if using Anthropic models |
 
 Your Anthropic API key. Get one at [console.anthropic.com](https://console.anthropic.com). The key is stored locally in `.obsidian/plugins/penny/data.json` and is sent only to Anthropic's API endpoint (`https://api.anthropic.com/v1/messages`).
 
-### Model
+### Test Anthropic Connection
+
+Button that sends a minimal request to the Anthropic API to verify the key is valid. Reports success or the specific error.
+
+### Ollama Endpoint
 
 | Field | Value |
 |-------|-------|
-| Type | Dropdown |
-| Default | `claude-opus-4-6` |
+| Type | Text |
+| Default | `http://localhost:11434` |
 
-Which Claude model to use for revisions. Available options and recommendations:
+URL of the Ollama server. Change only if Ollama runs on a different host or port (e.g. a remote server or Docker container).
+
+### Ollama API Key (Optional)
+
+| Field | Value |
+|-------|-------|
+| Type | Password text |
+| Default | (empty) |
+
+Only needed if your Ollama instance requires authentication (e.g. a remote hosted instance behind a proxy). Leave blank for local Ollama.
+
+### Test Ollama Connection
+
+Button that hits Ollama's `/api/tags` endpoint to verify connectivity and list available local models.
+
+## Model Routing
+
+Model routing lets PENNY use different models for different types of work. Simple tasks can use a fast/cheap model while complex tasks get the strongest model.
+
+### Use Same Model for All Tiers
+
+| Field | Value |
+|-------|-------|
+| Type | Toggle |
+| Default | On |
+
+When on, all annotations use a single provider and model (configured in one row). When off, three rows appear -- one per complexity tier.
+
+### Complexity Tiers
+
+Annotation tags are grouped by complexity:
+
+| Tier | Tags | Recommended Use |
+|------|------|-----------------|
+| **Light** | CUT, PACING | Fast/cheap models. Simple mechanical edits. |
+| **Standard** | TONE, EXPAND, PLOT | Balanced quality and cost. General-purpose revisions. |
+| **Heavy** | REWRITE, DIALOG, CHARACTER | Best model available. Voice-critical, nuanced work. |
+
+Each tier has a **provider dropdown** and a **model selector**:
+- For Anthropic, the model is a dropdown with available Claude models.
+- For Ollama, the model is a text field where you type the model name (e.g. `llama3.2`, `mistral`).
+
+### Example Configurations
+
+| Setup | Light | Standard | Heavy |
+|-------|-------|----------|-------|
+| All Anthropic (default) | Haiku | Sonnet | Opus |
+| All local | llama3.2 | mistral | deepseek-coder |
+| Hybrid (cost-optimized) | Ollama/llama3.2 | Anthropic/Sonnet | Anthropic/Opus |
+| Single model | -- | Sonnet (all tiers) | -- |
+
+### Anthropic Models
 
 | Model | Best For | Trade-off |
 |-------|----------|-----------|
 | `claude-opus-4-6` | Literary prose, voice matching, complex scenes | Highest quality, highest cost |
 | `claude-sonnet-4-6` | Routine revisions, dialogue fixes, cuts | Good quality, moderate cost |
-| `claude-haiku-3-5` | Quick passes, simple rewrites, bulk processing | Fastest, lowest cost, less nuanced |
-
-**Recommendation:** Use Opus for chapters that matter most (key scenes, voice-critical passages, complex emotional beats). Use Sonnet for routine work. Use Haiku for bulk first-pass processing when you plan to do a second pass with a better model.
+| `claude-haiku-4-5` | Quick passes, simple rewrites, bulk processing | Fastest, lowest cost, less nuanced |
 
 ### Context Budget
 
@@ -41,6 +96,8 @@ Which Claude model to use for revisions. Available options and recommendations:
 Maximum tokens for context assembly. PENNY loads your chapter, style guide, voice tests, character sheets, outlines, and wiki entries into the prompt. If the assembled context exceeds this budget, PENNY drops sources from the bottom of the priority list (see [Voice Enforcement](voice-enforcement.md) for the priority order).
 
 For most projects, the default of 800,000 tokens is more than sufficient. Lower this if you want to reduce API costs or speed up processing.
+
+**Note on token estimation:** Different providers use different tokenizers. PENNY uses a words-to-tokens multiplier (1.33 for Anthropic, 1.0 for Ollama) for budget estimation. The context budget applies regardless of which provider handles the annotation.
 
 ## Project Structure
 

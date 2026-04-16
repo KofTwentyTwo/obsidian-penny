@@ -26,12 +26,15 @@ export interface ContextFiles {
 
 /**
  * Estimate token count from text.
- * Heuristic: 1 word ~ 1.33 tokens.
+ *
+ * @param text       The text to estimate tokens for.
+ * @param multiplier Words-to-tokens ratio. Defaults to 1.33 (Anthropic).
+ *                   Ollama-style providers may use 1.0 or a different value.
  */
-export function estimateTokens(text: string): number {
+export function estimateTokens(text: string, multiplier = 1.33): number {
   if (!text || text.trim().length === 0) return 0;
   const wordCount = text.trim().split(/\s+/).length;
-  return Math.ceil(wordCount * 1.33);
+  return Math.ceil(wordCount * multiplier);
 }
 
 /**
@@ -102,17 +105,23 @@ export function selectVoiceTestSection(
  *   7. Series bible (if space permits)
  *   8. Themes (if space permits)
  */
+/**
+ * @param tokenMultiplier  Words-to-tokens ratio for the active provider.
+ *                         Defaults to 1.33 (Anthropic). Pass the value from
+ *                         the provider's `tokenEstimationMultiplier()`.
+ */
 export function assembleContext(
   files: ContextFiles,
   annotation: AnnotatedSection,
   settings: PennySettings,
+  tokenMultiplier = 1.33,
 ): AssembledContext {
   const budget = settings.contextBudget;
   let remaining = budget;
 
   // Priority 1: chapter (always included, never truncated).
   const chapter = files.chapter;
-  remaining -= estimateTokens(chapter);
+  remaining -= estimateTokens(chapter, tokenMultiplier);
 
   // Priority 2: voice tests.
   let voiceTests = "";
@@ -120,28 +129,28 @@ export function assembleContext(
     // We don't know characters yet at this layer, so include full voice tests.
     // The caller can pre-filter using selectVoiceTestSection.
     voiceTests = files.voiceTests;
-    remaining -= estimateTokens(voiceTests);
+    remaining -= estimateTokens(voiceTests, tokenMultiplier);
   }
 
   // Priority 3: style guide.
   let styleGuide = "";
   if (files.styleGuide && remaining > 0) {
     styleGuide = files.styleGuide;
-    remaining -= estimateTokens(styleGuide);
+    remaining -= estimateTokens(styleGuide, tokenMultiplier);
   }
 
   // Priority 4: outline.
   let outline = "";
   if (files.outline && remaining > 0) {
     outline = files.outline;
-    remaining -= estimateTokens(outline);
+    remaining -= estimateTokens(outline, tokenMultiplier);
   }
 
   // Priority 5: characters.
   let characters = "";
   if (files.characters && files.characters.length > 0 && remaining > 0) {
     const combined = files.characters.join("\n\n---\n\n");
-    const tokens = estimateTokens(combined);
+    const tokens = estimateTokens(combined, tokenMultiplier);
     if (tokens <= remaining) {
       characters = combined;
       remaining -= tokens;
@@ -149,7 +158,7 @@ export function assembleContext(
       // Include as many character files as fit.
       const parts: string[] = [];
       for (const charFile of files.characters) {
-        const t = estimateTokens(charFile);
+        const t = estimateTokens(charFile, tokenMultiplier);
         if (t <= remaining) {
           parts.push(charFile);
           remaining -= t;
@@ -163,14 +172,14 @@ export function assembleContext(
   let wiki = "";
   if (files.wiki && files.wiki.length > 0 && remaining > 0) {
     const combined = files.wiki.join("\n\n---\n\n");
-    const tokens = estimateTokens(combined);
+    const tokens = estimateTokens(combined, tokenMultiplier);
     if (tokens <= remaining) {
       wiki = combined;
       remaining -= tokens;
     } else {
       const parts: string[] = [];
       for (const entry of files.wiki) {
-        const t = estimateTokens(entry);
+        const t = estimateTokens(entry, tokenMultiplier);
         if (t <= remaining) {
           parts.push(entry);
           remaining -= t;
@@ -183,7 +192,7 @@ export function assembleContext(
   // Priority 7: series bible.
   let seriesBible = "";
   if (files.seriesBible && remaining > 0) {
-    const tokens = estimateTokens(files.seriesBible);
+    const tokens = estimateTokens(files.seriesBible, tokenMultiplier);
     if (tokens <= remaining) {
       seriesBible = files.seriesBible;
       remaining -= tokens;
@@ -193,7 +202,7 @@ export function assembleContext(
   // Priority 8: themes.
   let themes = "";
   if (files.themes && remaining > 0) {
-    const tokens = estimateTokens(files.themes);
+    const tokens = estimateTokens(files.themes, tokenMultiplier);
     if (tokens <= remaining) {
       themes = files.themes;
       remaining -= tokens;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPrompt, parseApiResponse } from "../src/drafter";
+import { buildPrompt } from "../src/drafter";
 import type { AssembledContext, AnnotatedSection } from "../src/types";
 import { DEFAULT_SYSTEM_PROMPT } from "../src/types";
 
@@ -167,66 +167,5 @@ describe("buildPrompt", () => {
   });
 });
 
-describe("parseApiResponse", () => {
-  it("extracts text from a standard Anthropic Messages response", () => {
-    const response = JSON.stringify({
-      content: [
-        { type: "thinking", thinking: "Let me think about this..." },
-        { type: "text", text: "The revised passage goes here." },
-      ],
-    });
-
-    const result = parseApiResponse(response);
-    expect(result).toBe("The revised passage goes here.");
-  });
-
-  it("handles response with only a text block", () => {
-    const response = JSON.stringify({
-      content: [
-        { type: "text", text: "Just the text." },
-      ],
-    });
-
-    const result = parseApiResponse(response);
-    expect(result).toBe("Just the text.");
-  });
-
-  it("handles response with no text block", () => {
-    const response = JSON.stringify({
-      content: [
-        { type: "thinking", thinking: "Thinking only." },
-      ],
-    });
-
-    const result = parseApiResponse(response);
-    expect(result).toBe("");
-  });
-
-  it("handles empty content array", () => {
-    const response = JSON.stringify({ content: [] });
-    const result = parseApiResponse(response);
-    expect(result).toBe("");
-  });
-
-  it("handles invalid JSON gracefully", () => {
-    const result = parseApiResponse("not json at all");
-    expect(result).toBe("not json at all");
-  });
-
-  it("trims whitespace from extracted text", () => {
-    const response = JSON.stringify({
-      content: [
-        { type: "text", text: "  trimmed text  \n" },
-      ],
-    });
-
-    const result = parseApiResponse(response);
-    expect(result).toBe("trimmed text");
-  });
-
-  it("handles plain string JSON", () => {
-    const response = JSON.stringify("plain string response");
-    const result = parseApiResponse(response);
-    expect(result).toBe("plain string response");
-  });
-});
+// NOTE: parseApiResponse tests have been moved to test/providers/anthropic.test.ts
+// and test/providers/ollama.test.ts since response parsing is now provider-specific.

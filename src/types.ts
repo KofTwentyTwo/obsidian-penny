@@ -3,11 +3,26 @@
  * Shared type definitions
  */
 
+/** Route configuration for a complexity tier */
+export interface ModelRoute {
+  provider: string;
+  model: string;
+}
+
 /** Plugin settings stored in Obsidian's data.json */
 export interface PennySettings {
-  // API
-  apiKey: string;
-  model: string;
+  // Provider keys & endpoints
+  anthropicApiKey: string;
+  ollamaEndpoint: string;
+  ollamaApiKey: string;
+
+  // Model routing
+  routeLight: ModelRoute;
+  routeStandard: ModelRoute;
+  routeHeavy: ModelRoute;
+  useSameModelForAll: boolean;
+
+  // Context
   contextBudget: number;
 
   // Project structure (paths relative to vault root)
@@ -82,9 +97,47 @@ Write the revised passage. Rules:
 - If voice tests are provided, match them precisely.
 - If a character sheet exists for a character in the scene, match their voice.`;
 
+/**
+ * Migrate legacy settings (pre-provider-abstraction) to the new format.
+ *
+ * If saved data contains old `apiKey` or `model` fields, map them to the
+ * new `anthropicApiKey` and route fields so existing users are not broken.
+ */
+export function migrateSettings(
+  saved: Record<string, unknown>,
+): Record<string, unknown> {
+  const migrated = { ...saved };
+
+  // Migrate old apiKey -> anthropicApiKey
+  if ("apiKey" in migrated && !("anthropicApiKey" in migrated)) {
+    migrated.anthropicApiKey = migrated.apiKey;
+  }
+  delete migrated.apiKey;
+
+  // Migrate old model -> all three routes (uniform routing)
+  if ("model" in migrated && typeof migrated.model === "string") {
+    const oldModel = migrated.model as string;
+    const route: ModelRoute = { provider: "anthropic", model: oldModel };
+    if (!("routeLight" in migrated)) migrated.routeLight = { ...route };
+    if (!("routeStandard" in migrated)) migrated.routeStandard = { ...route };
+    if (!("routeHeavy" in migrated)) migrated.routeHeavy = { ...route };
+    if (!("useSameModelForAll" in migrated)) migrated.useSameModelForAll = true;
+  }
+  delete migrated.model;
+
+  return migrated;
+}
+
 export const DEFAULT_SETTINGS: PennySettings = {
-  apiKey: "",
-  model: "claude-opus-4-6",
+  anthropicApiKey: "",
+  ollamaEndpoint: "http://localhost:11434",
+  ollamaApiKey: "",
+
+  routeLight: { provider: "anthropic", model: "claude-haiku-4-5" },
+  routeStandard: { provider: "anthropic", model: "claude-sonnet-4-6" },
+  routeHeavy: { provider: "anthropic", model: "claude-opus-4-6" },
+  useSameModelForAll: true,
+
   contextBudget: 800000,
 
   draftsFolder: "04-drafts",
@@ -213,6 +266,8 @@ export interface AnnotationChange {
   originalWordCount: number;
   revisedWordCount: number;
   contextFilesUsed: string[];
+  provider: string;
+  model: string;
 }
 
 export interface ReviewFlag {
@@ -240,6 +295,7 @@ export interface ActivityLogEntry {
   wordCountAfter: number;
   tags: string[];
   durationMs: number;
+  provider: string;
   model: string;
   voiceCompliance: VoiceComplianceResult;
 }

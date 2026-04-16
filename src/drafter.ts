@@ -1,11 +1,14 @@
 /**
- * PENNY - Prompt Construction
+ * PENNY - Prompt Construction & Provider Dispatch
  *
  * Build the system and user prompts from assembled context and an annotation.
- * Pure functions -- no Obsidian API dependencies.
+ * Dispatch completion requests to the active LLM provider.
+ * Pure functions -- no Obsidian API dependencies (except callProvider which
+ * accepts the provider as a parameter).
  */
 
 import type { AssembledContext, AnnotatedSection } from "./types";
+import type { LLMService, CompletionRequest, CompletionResponse } from "./providers/service";
 
 /**
  * All placeholders that can appear in the system prompt template.
@@ -86,38 +89,22 @@ export function buildPrompt(
 }
 
 /**
- * Parse the text content from an Anthropic Messages API JSON response.
+ * Send a completion request through the given LLM provider.
  *
- * The response shape is:
- * ```json
- * {
- *   "content": [
- *     { "type": "thinking", "thinking": "..." },
- *     { "type": "text", "text": "the actual output" }
- *   ]
- * }
- * ```
+ * The provider already has the HTTP function injected at construction time
+ * (via the registry), so callers just need to pass the request with the
+ * appropriate API key and endpoint from settings.
  *
- * We extract the first `text` block's content.
+ * @param provider  The LLM service implementation (Anthropic, Ollama, etc.)
+ * @param request   The completion request (systemPrompt, userPrompt, model, maxTokens,
+ *                  plus optional apiKey and endpoint for the provider).
+ * @returns         The provider's response including the generated text.
  */
-export function parseApiResponse(responseText: string): string {
-  try {
-    const data = JSON.parse(responseText);
-    if (data && Array.isArray(data.content)) {
-      const textBlock = data.content.find(
-        (block: Record<string, unknown>) => block.type === "text",
-      );
-      if (textBlock && typeof textBlock.text === "string") {
-        return textBlock.text.trim();
-      }
-    }
-    // Fallback: if the response is a plain string.
-    if (typeof data === "string") return data.trim();
-    return "";
-  } catch {
-    // If not valid JSON, return the raw text (might be a plain-text response).
-    return responseText.trim();
-  }
+export async function callProvider(
+  provider: LLMService,
+  request: CompletionRequest,
+): Promise<CompletionResponse> {
+  return provider.complete(request);
 }
 
 /** Escape special regex characters in a string. */

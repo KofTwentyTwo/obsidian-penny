@@ -8,11 +8,14 @@
  * @module main
  */
 
-import { Plugin, Notice, TFile } from "obsidian";
+import { Plugin, Notice, TFile, requestUrl } from "obsidian";
 import { PennySettingTab } from "./settings";
 import { PennyStatusBar } from "./statusbar";
 import { registerCommands } from "./commands";
-import { DEFAULT_SETTINGS } from "./types";
+import { DEFAULT_SETTINGS, migrateSettings } from "./types";
+import { createRegistry } from "./providers";
+import type { ProviderRegistry } from "./providers/registry";
+import type { HttpRequestParam } from "./providers/service";
 import type { PennySettings } from "./types";
 
 /**
@@ -38,6 +41,9 @@ export default class PennyPlugin extends Plugin {
   /** Current plugin settings */
   settings: PennySettings = { ...DEFAULT_SETTINGS };
 
+  /** LLM provider registry */
+  providerRegistry!: ProviderRegistry;
+
   /** Status bar widget instance */
   statusBar: PennyStatusBar | null = null;
 
@@ -50,7 +56,25 @@ export default class PennyPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    // Register the settings tab
+    // Create LLM provider registry with Obsidian's requestUrl as the HTTP layer.
+    // The adapter maps requestUrl's response to the HttpResponse shape providers expect.
+    this.providerRegistry = createRegistry(async (params: HttpRequestParam) => {
+      const resp = await requestUrl({
+        url: params.url,
+        method: params.method,
+        headers: params.headers,
+        body: params.body,
+        contentType: params.contentType,
+      });
+      return {
+        status: resp.status,
+        headers: resp.headers,
+        text: resp.text,
+        json: resp.json,
+      };
+    });
+
+    // Register the settings tab (receives the registry for model dropdowns)
     this.addSettingTab(new PennySettingTab(this.app, this));
 
     // Register all commands
@@ -82,10 +106,10 @@ export default class PennyPlugin extends Plugin {
       this.statusBar.update(activeFile, this);
     }
 
-    // First-run notice if no API key is set
-    if (!this.settings.apiKey) {
+    // First-run notice if no provider is configured
+    if (!this.settings.anthropicApiKey && !this.settings.ollamaEndpoint) {
       new Notice(
-        "PENNY loaded. Set your Anthropic API key in Settings > PENNY to get started.",
+        "PENNY loaded. Configure an LLM provider in Settings > PENNY to get started.",
         8000
       );
     }
@@ -102,10 +126,12 @@ export default class PennyPlugin extends Plugin {
 
   /**
    * Load settings from Obsidian's data store, merging with defaults.
+   * Applies migration for legacy `apiKey` / `model` fields.
    */
   async loadSettings(): Promise<void> {
-    const data = await this.loadData();
-    this.settings = { ...DEFAULT_SETTINGS, ...(data ?? {}) };
+    const raw = await this.loadData();
+    const migrated = raw ? migrateSettings(raw as Record<string, unknown>) : {};
+    this.settings = { ...DEFAULT_SETTINGS, ...migrated };
   }
 
   /**

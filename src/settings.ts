@@ -5,7 +5,7 @@
  * voice rules, behavior, and git integration.
  */
 
-import { PluginSettingTab, Setting, App } from "obsidian";
+import { PluginSettingTab, Setting, App, Notice } from "obsidian";
 import type PennyPlugin from "./main";
 import { DEFAULT_SYSTEM_PROMPT } from "./types";
 
@@ -34,7 +34,8 @@ export class PennySettingTab extends PluginSettingTab {
       cls: "setting-item-description",
     });
 
-    this.renderApiSection(containerEl);
+    this.renderProvidersSection(containerEl);
+    this.renderModelRoutingSection(containerEl);
     this.renderProjectStructureSection(containerEl);
     this.renderVoiceSection(containerEl);
     this.renderBehaviorSection(containerEl);
@@ -42,48 +43,193 @@ export class PennySettingTab extends PluginSettingTab {
   }
 
   /**
-   * API Settings -- key, model, context budget.
+   * Providers -- Anthropic key, Ollama endpoint, test buttons.
    */
-  private renderApiSection(containerEl: HTMLElement): void {
+  private renderProvidersSection(containerEl: HTMLElement): void {
     const details = containerEl.createEl("details", { attr: { open: "" } });
-    details.createEl("summary", { text: "API Settings" });
+    details.createEl("summary", { text: "Providers" });
+    details.createEl("p", {
+      text: "Configure one or more LLM providers. PENNY can route different annotation types to different providers.",
+      cls: "setting-item-description",
+    });
+
+    // -- Anthropic --
+    details.createEl("h4", { text: "Anthropic (Claude API)" });
 
     new Setting(details)
-      .setName("API key")
+      .setName("Anthropic API key")
       .setDesc(
         "Your Anthropic API key. Get one at console.anthropic.com. Stored locally in plugin data."
       )
       .addText((text) =>
         text
           .setPlaceholder("sk-ant-...")
-          .setValue(this.plugin.settings.apiKey)
+          .setValue(this.plugin.settings.anthropicApiKey)
           .then((t) => {
             t.inputEl.type = "password";
             t.inputEl.style.width = "300px";
           })
           .onChange(async (value) => {
-            this.plugin.settings.apiKey = value.trim();
+            this.plugin.settings.anthropicApiKey = value.trim();
             await this.plugin.saveSettings();
           })
       );
 
     new Setting(details)
-      .setName("Model")
+      .setName("Test Anthropic connection")
+      .setDesc("Verify that your API key is valid.")
+      .addButton((button) =>
+        button.setButtonText("Test Connection").onClick(async () => {
+          button.setButtonText("Testing...");
+          button.setDisabled(true);
+          try {
+            const provider = this.plugin.providerRegistry.get("anthropic");
+            if (!provider) throw new Error("Anthropic provider not registered");
+            const result = await provider.testConnection({
+              apiKey: this.plugin.settings.anthropicApiKey,
+            });
+            if (result) {
+              new Notice(
+                `PENNY: Anthropic connection failed -- ${result}`,
+                6000,
+              );
+            } else {
+              new Notice(
+                "PENNY: Anthropic connection OK.",
+                4000,
+              );
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            new Notice(
+              `PENNY: Test failed -- ${msg}`,
+              6000,
+            );
+          } finally {
+            button.setButtonText("Test Connection");
+            button.setDisabled(false);
+          }
+        })
+      );
+
+    // -- Ollama --
+    details.createEl("h4", { text: "Ollama (Local Models)" });
+
+    new Setting(details)
+      .setName("Ollama endpoint")
       .setDesc(
-        "Claude model for revisions. Opus is the most capable. Sonnet is faster and cheaper for routine work."
+        "URL of the Ollama server. Default: http://localhost:11434. Change only if Ollama runs on a different host or port."
       )
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("claude-opus-4-6", "Claude Opus 4.6")
-          .addOption("claude-sonnet-4-6", "Claude Sonnet 4.6")
-          .addOption("claude-haiku-4-5", "Claude Haiku 4.5")
-          .setValue(this.plugin.settings.model)
+      .addText((text) =>
+        text
+          .setPlaceholder("http://localhost:11434")
+          .setValue(this.plugin.settings.ollamaEndpoint)
+          .then((t) => {
+            t.inputEl.style.width = "300px";
+          })
           .onChange(async (value) => {
-            this.plugin.settings.model = value;
+            this.plugin.settings.ollamaEndpoint = value.trim();
             await this.plugin.saveSettings();
           })
       );
 
+    new Setting(details)
+      .setName("Ollama API key (optional)")
+      .setDesc(
+        "Only needed if your Ollama instance requires authentication (e.g. remote hosted). Leave blank for local Ollama."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("")
+          .setValue(this.plugin.settings.ollamaApiKey)
+          .then((t) => {
+            t.inputEl.type = "password";
+            t.inputEl.style.width = "300px";
+          })
+          .onChange(async (value) => {
+            this.plugin.settings.ollamaApiKey = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(details)
+      .setName("Test Ollama connection")
+      .setDesc("Verify that Ollama is reachable and list available models.")
+      .addButton((button) =>
+        button.setButtonText("Test Connection").onClick(async () => {
+          button.setButtonText("Testing...");
+          button.setDisabled(true);
+          try {
+            const provider = this.plugin.providerRegistry.get("ollama");
+            if (!provider) throw new Error("Ollama provider not registered");
+            const result = await provider.testConnection({
+              endpoint: this.plugin.settings.ollamaEndpoint,
+              apiKey: this.plugin.settings.ollamaApiKey,
+            });
+            if (result) {
+              new Notice(
+                `PENNY: Ollama test failed -- ${result}`,
+                6000,
+              );
+            } else {
+              new Notice(
+                "PENNY: Ollama connection OK.",
+                4000,
+              );
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            new Notice(
+              `PENNY: Ollama test failed -- ${msg}`,
+              6000,
+            );
+          } finally {
+            button.setButtonText("Test Connection");
+            button.setDisabled(false);
+          }
+        })
+      );
+  }
+
+  /**
+   * Model Routing -- map complexity tiers to provider+model.
+   */
+  private renderModelRoutingSection(containerEl: HTMLElement): void {
+    const details = containerEl.createEl("details", { attr: { open: "" } });
+    details.createEl("summary", { text: "Model Routing" });
+    details.createEl("p", {
+      text: "Choose which provider and model to use for each complexity tier. Simple tasks (CUT, PACING) use Light. Complex tasks (REWRITE, DIALOG, CHARACTER) use Heavy. Everything else uses Standard.",
+      cls: "setting-item-description",
+    });
+
+    const providers = this.plugin.providerRegistry.getAll();
+    const providerNames = providers.map((p) => p.name);
+
+    new Setting(details)
+      .setName("Use same model for all tiers")
+      .setDesc(
+        "When on, all annotations use the Standard model. Turn off to assign different models per complexity tier."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.useSameModelForAll)
+          .onChange(async (value) => {
+            this.plugin.settings.useSameModelForAll = value;
+            await this.plugin.saveSettings();
+            this.display(); // Re-render to show/hide per-tier rows
+          })
+      );
+
+    if (this.plugin.settings.useSameModelForAll) {
+      // Single row -- edits routeStandard and mirrors to light/heavy
+      this.renderRouteRow(details, "All tiers", "routeStandard", providerNames, true);
+    } else {
+      this.renderRouteRow(details, "Light (CUT, PACING)", "routeLight", providerNames);
+      this.renderRouteRow(details, "Standard (TONE, EXPAND, PLOT)", "routeStandard", providerNames);
+      this.renderRouteRow(details, "Heavy (REWRITE, DIALOG, CHARACTER)", "routeHeavy", providerNames);
+    }
+
+    // Context budget (moved here from old API section since it relates to routing)
     new Setting(details)
       .setName("Context budget")
       .setDesc(
@@ -101,6 +247,86 @@ export class PennySettingTab extends PluginSettingTab {
             }
           })
       );
+  }
+
+  /**
+   * Render a single route row: provider dropdown + model selector.
+   *
+   * For Anthropic the model is a dropdown. For Ollama it is a text input
+   * (the user types the model name, e.g. "llama3.2").
+   */
+  private renderRouteRow(
+    container: HTMLElement,
+    label: string,
+    routeKey: "routeLight" | "routeStandard" | "routeHeavy",
+    providerNames: string[],
+    mirrorAll = false,
+  ): void {
+    const route = this.plugin.settings[routeKey];
+
+    const anthropicModels: Array<{ id: string; name: string }> = [
+      { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+      { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
+    ];
+
+    const setting = new Setting(container).setName(label);
+
+    // Provider dropdown
+    setting.addDropdown((dropdown) => {
+      for (const name of providerNames) {
+        dropdown.addOption(name, name.charAt(0).toUpperCase() + name.slice(1));
+      }
+      dropdown.setValue(route.provider);
+      dropdown.onChange(async (value) => {
+        route.provider = value;
+        // When switching to Ollama, keep model text; switching to Anthropic, default to sonnet
+        if (value === "anthropic" && !anthropicModels.some((m) => m.id === route.model)) {
+          route.model = "claude-sonnet-4-6";
+        }
+        if (mirrorAll) {
+          this.plugin.settings.routeLight = { ...route };
+          this.plugin.settings.routeHeavy = { ...route };
+        }
+        await this.plugin.saveSettings();
+        this.display(); // Re-render to swap model widget
+      });
+    });
+
+    // Model selector: dropdown for Anthropic, text input for Ollama
+    if (route.provider === "anthropic") {
+      setting.addDropdown((dropdown) => {
+        for (const m of anthropicModels) {
+          dropdown.addOption(m.id, m.name);
+        }
+        dropdown.setValue(route.model);
+        dropdown.onChange(async (value) => {
+          route.model = value;
+          if (mirrorAll) {
+            this.plugin.settings.routeLight = { ...route };
+            this.plugin.settings.routeHeavy = { ...route };
+          }
+          await this.plugin.saveSettings();
+        });
+      });
+    } else {
+      setting.addText((text) =>
+        text
+          .setPlaceholder("e.g. llama3.2, mistral, deepseek-coder")
+          .setValue(route.model)
+          .then((t) => {
+            t.inputEl.style.width = "250px";
+          })
+          .onChange(async (value) => {
+            route.model = value.trim();
+            if (mirrorAll) {
+              this.plugin.settings.routeLight = { ...route };
+              this.plugin.settings.routeHeavy = { ...route };
+            }
+            await this.plugin.saveSettings();
+          })
+      );
+    }
   }
 
   /**

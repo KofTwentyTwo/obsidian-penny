@@ -7,6 +7,8 @@ Your AI co-author for Obsidian. PENNY processes editorial annotations in your no
 ## What PENNY Does
 
 - **Process editorial annotations** -- Drop `%% REWRITE: more tension here %%` into your chapter and PENNY rewrites that passage for you.
+- **Multi-provider LLM support** -- Use Anthropic Claude (cloud) for maximum quality, Ollama (local) for privacy and zero cost, or both at once with model routing.
+- **Model routing by complexity** -- Simple tasks (CUT, PACING) can use a fast/cheap model while complex tasks (REWRITE, DIALOG) get the strongest model. Configure per-tier or use one model for everything.
 - **Enforce voice consistency** -- PENNY reads your style guide and voice tests before every revision so the output sounds like your book, not a chatbot.
 - **Manage chapter versions** -- Every revision creates a new numbered version (`ch-05.v1.md`, `ch-05.v2.md`, ...) with full history preserved.
 - **Generate review notes** -- After processing, PENNY writes a review file summarizing what changed, word count deltas, and voice compliance flags.
@@ -16,10 +18,11 @@ Your AI co-author for Obsidian. PENNY processes editorial annotations in your no
 ## Quick Start
 
 1. Install PENNY from Obsidian's Community Plugins browser (Settings > Community plugins > Browse > search "PENNY").
-2. Set your Anthropic API key in Settings > PENNY > API Settings.
-3. Open a chapter file and add an annotation anywhere in the prose: `%% REWRITE: more tension here %%`
-4. Open the command palette (Ctrl/Cmd + P) and run **PENNY: Process this chapter**.
-5. PENNY creates a new version of the chapter in the same folder. Open it and review the changes.
+2. Configure a provider in Settings > PENNY > Providers: enter your Anthropic API key, or point PENNY at a running Ollama instance, or both.
+3. Choose your model routing in Settings > PENNY > Model Routing (or leave the defaults).
+4. Open a chapter file and add an annotation anywhere in the prose: `%% REWRITE: more tension here %%`
+5. Open the command palette (Ctrl/Cmd + P) and run **PENNY: Process this chapter**.
+6. PENNY creates a new version of the chapter in the same folder. Open it and review the changes.
 
 ## Documentation
 
@@ -38,7 +41,10 @@ Your AI co-author for Obsidian. PENNY processes editorial annotations in your no
 ## Requirements
 
 - **Obsidian 1.5.0** or later
-- **Anthropic API key** -- get one at [console.anthropic.com](https://console.anthropic.com)
+- **At least one LLM provider:**
+  - **Anthropic API key** -- get one at [console.anthropic.com](https://console.anthropic.com) (cloud, paid per token)
+  - **Ollama** -- install from [ollama.com](https://ollama.com) (local, free, runs on your machine)
+  - Or both, for hybrid routing (e.g. local models for simple edits, Claude for complex work)
 - **Desktop only** -- PENNY uses Node.js for git operations and is not available on Obsidian Mobile
 
 ## Installation
@@ -104,8 +110,8 @@ PENNY is configured through the Obsidian settings tab (Settings > PENNY) and opt
 
 Key settings:
 
-- **API Key** -- Your Anthropic API key.
-- **Model** -- Which Claude model to use (default: `claude-opus-4-6`).
+- **Providers** -- Configure Anthropic (API key) and/or Ollama (endpoint URL). Test connection buttons verify setup.
+- **Model routing** -- Assign a provider + model to each complexity tier (Light, Standard, Heavy), or use one model for everything.
 - **Project structure paths** -- Tell PENNY where your drafts, characters, style guide, outlines, and wiki live.
 - **Voice rules** -- Custom rules injected into every revision prompt.
 - **Behavior** -- Auto-process on save, verbose logging, file patterns.

@@ -2,15 +2,23 @@
 
 Common issues and how to fix them.
 
-## "No API key configured"
+## "No LLM provider configured"
 
-**Symptom:** PENNY shows a notice saying no API key is set when you try to process a chapter.
+**Symptom:** PENNY shows a notice saying no LLM provider is configured when you try to process a chapter.
 
-**Fix:**
-1. Go to Settings > PENNY > API Settings.
-2. Paste your Anthropic API key into the API Key field.
+**Fix:** You need at least one provider configured.
+
+**For Anthropic:**
+1. Go to Settings > PENNY > Providers.
+2. Paste your Anthropic API key into the **Anthropic API key** field.
 3. The key starts with `sk-ant-`. If your key looks different, it may be from a different provider.
 4. Get a key at [console.anthropic.com](https://console.anthropic.com) if you do not have one.
+
+**For Ollama:**
+1. Install Ollama from [ollama.com](https://ollama.com).
+2. Pull a model: `ollama pull llama3.2`
+3. Go to Settings > PENNY > Providers. The Ollama endpoint defaults to `http://localhost:11434`.
+4. Click **Test Ollama connection** to verify.
 
 ## Authentication Error (401)
 
@@ -19,13 +27,15 @@ Common issues and how to fix them.
 **Causes:**
 - The API key is invalid, expired, or revoked.
 - The key was copied with leading/trailing whitespace.
+- A provider mismatch: the model routing points to Anthropic but no Anthropic API key is set.
 
 **Fix:**
-1. Go to Settings > PENNY > API Settings.
-2. Clear the API Key field completely.
+1. Go to Settings > PENNY > Providers.
+2. Clear the Anthropic API Key field completely.
 3. Go to [console.anthropic.com](https://console.anthropic.com) > API Keys.
 4. Verify your key is active. If in doubt, create a new one.
 5. Copy the new key carefully (no extra spaces) and paste it into the settings field.
+6. Click **Test Anthropic connection** to verify before processing again.
 
 ## "No annotations found"
 

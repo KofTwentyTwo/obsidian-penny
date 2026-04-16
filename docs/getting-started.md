@@ -24,24 +24,61 @@ Use this if PENNY is not yet in the community browser or you want to install fro
 6. Restart Obsidian (or reload without cache: Ctrl/Cmd + Shift + R on desktop).
 7. Go to **Settings > Community plugins**, find PENNY in the list, and toggle it on.
 
-## 2. Get an Anthropic API Key
+## 2. Configure an LLM Provider
 
-PENNY calls Claude through the Anthropic API. You need an API key.
+PENNY supports multiple LLM providers. You need at least one.
+
+### Option A: Anthropic (Claude API -- Cloud)
+
+Best for: highest-quality prose revision, voice matching, complex scenes.
 
 1. Go to [console.anthropic.com](https://console.anthropic.com).
 2. Create an account or sign in.
 3. Navigate to **API Keys** and click **Create Key**.
 4. Copy the key. You will not be able to see it again.
+5. In Obsidian, go to **Settings > PENNY > Providers**.
+6. Paste the key into the **Anthropic API key** field.
+7. Click **Test Anthropic connection** to verify.
 
 **Pricing note:** Anthropic charges per token. PENNY makes one API call per annotation (not per chapter). A typical revision pass on a chapter with 5 annotations costs roughly $0.50-$2.00 depending on the model and context size. See [API Costs](api-costs.md) for detailed estimates.
 
 **Which plan?** Any Anthropic API plan works. There is no minimum tier requirement. You load credits and pay for what you use.
 
-## 3. Enter Your API Key
+### Option B: Ollama (Local Models -- Free)
 
-1. In Obsidian, go to **Settings > PENNY**.
-2. In the **API Settings** section, paste your API key into the **API Key** field.
-3. The key is stored locally in your vault's plugin data (`.obsidian/plugins/penny/data.json`). It is never sent anywhere except Anthropic's API endpoint.
+Best for: privacy, zero cost, offline work, simple edits.
+
+1. Install Ollama from [ollama.com](https://ollama.com). It runs on macOS, Linux, and Windows.
+2. Pull a model. Open a terminal and run:
+   ```bash
+   ollama pull llama3.2
+   ```
+   Other good choices: `mistral`, `deepseek-coder`, `gemma2`. See [Ollama's model library](https://ollama.com/library) for the full list.
+3. Ollama starts automatically after install. Verify it is running:
+   ```bash
+   ollama list
+   ```
+4. In Obsidian, go to **Settings > PENNY > Providers**.
+5. The **Ollama endpoint** defaults to `http://localhost:11434`. Change this only if Ollama runs on a different host or port.
+6. Click **Test Ollama connection** to verify. PENNY will list your locally available models.
+
+**No API key needed** for local Ollama. If you use a remote/hosted Ollama instance that requires authentication, enter the key in the optional **Ollama API key** field.
+
+### Option C: Both (Hybrid Routing)
+
+You can configure both providers and use model routing to send different tasks to different models. For example:
+- Light tasks (CUT, PACING) go to a fast local Ollama model (free)
+- Heavy tasks (REWRITE, DIALOG, CHARACTER) go to Claude Opus (best quality)
+
+Set this up in **Settings > PENNY > Model Routing** after configuring both providers. See [Configuration](configuration.md) for details.
+
+## 3. Choose Your Model
+
+1. In Obsidian, go to **Settings > PENNY > Model Routing**.
+2. By default, **Use same model for all tiers** is on. Pick a provider and model from the dropdowns.
+3. If you want different models for different annotation types, turn the toggle off and configure each tier separately.
+
+API keys and endpoints are stored locally in your vault's plugin data (`.obsidian/plugins/penny/data.json`). They are never sent anywhere except the configured provider endpoints.
 
 ## 4. Set Up Your Project
 

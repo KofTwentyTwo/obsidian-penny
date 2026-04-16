@@ -1,6 +1,6 @@
 # API Costs
 
-PENNY uses the Anthropic API to process annotations. You pay per token. This guide explains how costs work and how to manage them.
+PENNY can use multiple LLM providers. Anthropic Claude charges per token, while Ollama runs locally at no API cost. This guide explains how costs work and how to manage them.
 
 ## How PENNY Uses the API
 
@@ -109,15 +109,46 @@ These are rough estimates. Actual costs depend on your chapter lengths, context 
 
 **Note:** Anthropic pricing changes over time. Check [anthropic.com/pricing](https://www.anthropic.com/pricing) for current rates.
 
+## Ollama (Local Models) -- Free
+
+Ollama runs models locally on your machine. There is no per-token cost. The only costs are:
+
+- **Electricity and hardware** -- running large models requires a capable GPU. Smaller models (7B parameters) run well on most modern machines.
+- **Quality trade-off** -- local models are generally less capable than Claude Opus for nuanced prose work, but excellent for simple edits.
+
+### When to use Ollama
+
+- **CUT annotations** -- condensing is mechanical. A local model handles it well.
+- **PACING annotations** -- restructuring paragraphs requires less voice nuance.
+- **Bulk first passes** -- process all annotations with a fast local model, then re-annotate the ones that need more finesse and process those with Claude.
+- **Privacy-sensitive projects** -- nothing leaves your machine.
+
+### Hybrid routing for cost reduction
+
+With model routing, you can send different annotation types to different providers in the same chapter pass:
+
+| Tier | Provider | Cost |
+|------|----------|------|
+| Light (CUT, PACING) | Ollama/llama3.2 | Free |
+| Standard (TONE, EXPAND, PLOT) | Anthropic/Sonnet | ~$0.04/annotation |
+| Heavy (REWRITE, DIALOG, CHARACTER) | Anthropic/Opus | ~$0.07/annotation |
+
+For a chapter with 2 CUT, 2 EXPAND, and 1 REWRITE annotation, the hybrid cost is roughly $0.15 vs. $0.35 for all-Opus. Over a full novel revision pass, this adds up.
+
 ## Tips for Reducing Costs
+
+### Use model routing
+
+PENNY's model routing is the most effective cost lever. Light tasks (CUT, PACING) rarely need a top-tier model. Set them to Haiku or a local Ollama model and reserve Opus for REWRITE, DIALOG, and CHARACTER annotations where voice precision matters.
 
 ### Use the right model for the job
 
 - **Opus** for voice-critical scenes, complex emotional beats, and chapters where precision matters most.
 - **Sonnet** for routine revisions, dialogue fixes, and general prose tightening. Good balance of quality and cost.
 - **Haiku** for bulk first-pass processing, simple cuts, and when you plan to do a follow-up pass with a better model.
+- **Ollama** for free local processing of simple edits and privacy-sensitive work.
 
-Switching models per chapter is easy -- change the model in settings before processing.
+Model routing handles this automatically once configured -- you do not need to manually switch models.
 
 ### Write fewer, better annotations
 
@@ -168,6 +199,7 @@ PENNY writes a JSONL log file to your activity log folder (default: `.penny-log/
   "wordCountAfter": 3450,
   "tags": ["REWRITE", "EXPAND"],
   "durationMs": 45000,
+  "provider": "anthropic",
   "model": "claude-opus-4-6"
 }
 ```
