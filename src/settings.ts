@@ -32,7 +32,9 @@ export class PennySettingTab extends PluginSettingTab {
 
     // Plugin header
     const header = containerEl.createDiv({ cls: "penny-settings-header" });
-    header.createEl("h1", { text: "PENNY" });
+    const titleRow = header.createDiv({ cls: "penny-title-row" });
+    titleRow.createEl("h1", { text: "PENNY" });
+    titleRow.createEl("span", { text: `v${this.plugin.manifest.version}`, cls: "penny-version-badge" });
     header.createEl("p", {
       text: "Prose Engine for Narrative, Notes, and Yarns",
       cls: "penny-settings-subtitle",
@@ -98,6 +100,14 @@ export class PennySettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    // Anthropic models -- show static list + fetch from API if key is set
+    const anthropicModelsSetting = new Setting(details)
+      .setName("Available Claude models")
+      .setDesc("Models available for use with Anthropic.");
+    const anthropicModelListEl = details.createEl("div", { cls: "penny-model-list" });
+    // Auto-load if API key is set
+    this.loadAnthropicModels(anthropicModelListEl);
 
     new Setting(details)
       .setName("Test Anthropic connection")
@@ -176,37 +186,20 @@ export class PennySettingTab extends PluginSettingTab {
           })
       );
 
+    // Ollama models -- fetch and display
+    const ollamaModelListEl = details.createEl("div", { cls: "penny-model-list" });
     new Setting(details)
-      .setName("Refresh Ollama models")
+      .setName("Available Ollama models")
       .setDesc(
-        "Fetch the list of models installed on your Ollama instance. Useful if you're not sure which models are available."
+        "Models installed on your Ollama instance. Click Refresh to fetch the latest list."
       )
       .addButton((button) =>
         button.setButtonText("Refresh Models").onClick(async () => {
-          button.setButtonText("Fetching...");
-          button.setDisabled(true);
-          try {
-            const provider = this.plugin.providerRegistry.get("ollama");
-            if (!provider) throw new Error("Ollama provider not registered");
-            const models = await provider.getModels({
-              endpoint: this.plugin.settings.ollamaEndpoint,
-              apiKey: this.plugin.settings.ollamaApiKey,
-            });
-            if (models.length === 0) {
-              new Notice("PENNY: No models found on Ollama. Install models with 'ollama pull <model>'.", 6000);
-            } else {
-              const names = models.map((m) => m.name).join(", ");
-              new Notice(`PENNY: Ollama models available: ${names}`, 8000);
-            }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            new Notice(`PENNY: Failed to fetch Ollama models -- ${msg}`, 6000);
-          } finally {
-            button.setButtonText("Refresh Models");
-            button.setDisabled(false);
-          }
+          await this.loadOllamaModels(ollamaModelListEl);
         })
       );
+    // Auto-load on render
+    this.loadOllamaModels(ollamaModelListEl);
 
     new Setting(details)
       .setName("Test Ollama connection")
@@ -648,6 +641,65 @@ export class PennySettingTab extends PluginSettingTab {
   /**
    * Detect project structure by scanning the vault for common patterns.
    */
+  /**
+   * Load and display Anthropic models in the given container element.
+   */
+  private async loadAnthropicModels(containerEl: HTMLElement): Promise<void> {
+    containerEl.empty();
+    // Show static catalog first
+    for (const m of ANTHROPIC_MODELS) {
+      const row = containerEl.createEl("div", { cls: "penny-model-row" });
+      row.createEl("span", { text: m.name, cls: "penny-model-name" });
+      row.createEl("span", { text: ` (${m.id})` });
+      if (m.contextWindow) {
+        row.createEl("span", {
+          text: ` -- ${(m.contextWindow / 1000).toFixed(0)}K context`,
+          cls: "penny-model-meta",
+        });
+      }
+    }
+  }
+
+  /**
+   * Fetch and display Ollama models in the given container element.
+   */
+  private async loadOllamaModels(containerEl: HTMLElement): Promise<void> {
+    containerEl.empty();
+    containerEl.createEl("div", { text: "Loading...", cls: "penny-model-meta" });
+    try {
+      const provider = this.plugin.providerRegistry.get("ollama");
+      if (!provider) {
+        containerEl.empty();
+        containerEl.createEl("div", { text: "Ollama provider not available.", cls: "penny-model-meta" });
+        return;
+      }
+      const models = await provider.getModels({
+        endpoint: this.plugin.settings.ollamaEndpoint,
+        apiKey: this.plugin.settings.ollamaApiKey,
+      });
+      containerEl.empty();
+      if (models.length === 0) {
+        containerEl.createEl("div", {
+          text: "No models found. Install models with: ollama pull <model>",
+          cls: "penny-model-meta",
+        });
+      } else {
+        for (const m of models) {
+          const row = containerEl.createEl("div", { cls: "penny-model-row" });
+          row.createEl("span", { text: m.name, cls: "penny-model-name" });
+          row.createEl("span", { text: ` (${m.id})` });
+        }
+      }
+    } catch (err) {
+      containerEl.empty();
+      const msg = err instanceof Error ? err.message : String(err);
+      containerEl.createEl("div", {
+        text: `Could not connect to Ollama: ${msg}`,
+        cls: "penny-model-meta",
+      });
+    }
+  }
+
   private async detectProjectStructure(): Promise<void> {
     const vault = this.plugin.app.vault;
     const allFolders = vault.getAllLoadedFiles().filter((f) => f instanceof TFolder) as TFolder[];

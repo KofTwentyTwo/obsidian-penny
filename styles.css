@@ -1,40 +1,97 @@
 /* PENNY - Prose Engine for Narrative, Notes, and Yarns */
 
-/* Settings header */
+/* Settings header -- hero banner */
 .penny-settings-header {
-  margin-bottom: 8px;
+  margin-bottom: 16px;
+  padding: 24px 28px;
+  background: linear-gradient(135deg, var(--background-secondary) 0%, var(--background-primary) 100%);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+}
+
+.penny-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
 }
 
 .penny-settings-header h1 {
-  margin-bottom: 0;
-  font-size: 1.8em;
+  margin: 0 0 2px 0;
+  font-size: 2.2em;
+  letter-spacing: -0.02em;
+}
+
+.penny-version-badge {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
 }
 
 .penny-settings-subtitle {
-  margin-top: 2px;
-  margin-bottom: 8px;
+  margin-top: 0;
+  margin-bottom: 12px;
   color: var(--text-muted);
   font-style: italic;
+  font-size: 1.05em;
+  letter-spacing: 0.01em;
+}
+
+.penny-settings-header .setting-item-description {
+  margin-bottom: 14px;
   font-size: 0.95em;
+  line-height: 1.5;
 }
 
 .penny-settings-links {
-  margin-top: 8px;
-  margin-bottom: 4px;
-  font-size: 0.85em;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: 0.9em;
 }
 
 .penny-settings-links a {
   color: var(--text-accent);
   text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  transition: background 0.15s;
 }
 
 .penny-settings-links a:hover {
-  text-decoration: underline;
+  background: var(--background-modifier-hover);
+  text-decoration: none;
 }
 
 .penny-settings-links span {
   color: var(--text-faint);
+}
+
+/* Model lists in provider sections */
+.penny-model-list {
+  margin: 4px 0 12px 0;
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  font-size: 0.9em;
+}
+
+.penny-model-row {
+  padding: 3px 0;
+}
+
+.penny-model-name {
+  font-weight: 600;
+}
+
+.penny-model-meta {
+  color: var(--text-muted);
+  font-size: 0.9em;
 }
 
 /* Settings collapsible sections */
