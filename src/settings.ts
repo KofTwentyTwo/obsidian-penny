@@ -1010,9 +1010,63 @@ export class PennySettingTab extends PluginSettingTab {
       row.createEl("td", { text: cmd.desc });
     }
 
+    // --- Annotation Directives Reference ---
+    details.createEl("h4", { text: "Annotation Directives", attr: { style: "margin-top: 20px;" } });
+    details.createEl("p", {
+      text: "Add these annotations to your chapter prose using Obsidian hidden comments. PENNY processes them on the next run.",
+      cls: "setting-item-description",
+    });
+    details.createEl("p", {
+      text: "Syntax:  %% TAG: your instruction %%",
+      cls: "penny-help-tip",
+    });
+
+    const directives: Array<{ tag: string; desc: string; example: string }> = [
+      { tag: "REWRITE", desc: "Replace this passage with a new version", example: "%% REWRITE: More atmosphere -- rain, neon reflections, city sounds %%" },
+      { tag: "EXPAND", desc: "Add depth, detail, or length to this passage", example: "%% EXPAND: Show her internal conflict through physical actions %%" },
+      { tag: "CUT", desc: "Shorten or remove this passage", example: "%% CUT: Too repetitive. Trim to 2 sentences max %%" },
+      { tag: "TONE", desc: "Adjust the voice or mood of this passage", example: "%% TONE: Too formal. Should be casual and fast-paced %%" },
+      { tag: "DIALOG", desc: "Rework dialogue for voice, realism, or subtext", example: "%% DIALOG: Tim's voice is wrong here. Check his character sheet %%" },
+      { tag: "CHARACTER", desc: "Fix character voice or behavior to match their profile", example: "%% CHARACTER: She wouldn't say this. Too passive. She's direct %%" },
+      { tag: "PACING", desc: "Speed up or slow down the passage", example: "%% PACING: This drags. Compress into quick beats %%" },
+      { tag: "PLOT", desc: "Flag or fix a continuity/plot issue", example: "%% PLOT: Tyler was established in Chicago in ch-03. Fix %%" },
+      { tag: "NOTE", desc: "Author note (NOT processed by PENNY)", example: "%% NOTE: Come back to this after writing ch-06 %%" },
+      { tag: "RESEARCH", desc: "Needs fact-checking (NOT processed, flagged in review)", example: "%% RESEARCH: Is this tech accurate for the timeline? %%" },
+    ];
+
+    const dTable = details.createEl("table", { cls: "penny-commands-table" });
+    const dHead = dTable.createEl("thead");
+    const dHeaderRow = dHead.createEl("tr");
+    dHeaderRow.createEl("th", { text: "Tag" });
+    dHeaderRow.createEl("th", { text: "What it does" });
+    dHeaderRow.createEl("th", { text: "Example" });
+
+    const dBody = dTable.createEl("tbody");
+    for (const d of directives) {
+      const row = dBody.createEl("tr");
+      row.createEl("td", { text: d.tag, cls: "penny-command-name" });
+      row.createEl("td", { text: d.desc });
+      const exCell = row.createEl("td");
+      exCell.createEl("code", { text: d.example, attr: { style: "font-size: 0.85em; word-break: break-word;" } });
+    }
+
+    details.createEl("h4", { text: "Placement Rules", attr: { style: "margin-top: 16px;" } });
+    const placementRules: Array<{ rule: string; desc: string }> = [
+      { rule: "Inline (within a paragraph)", desc: "Applies to the sentence or clause immediately before the %%" },
+      { rule: "Between paragraphs (own line)", desc: "Applies to the paragraph immediately above" },
+      { rule: "After a heading (line after #)", desc: "Applies to the entire section up to the next heading of equal or higher level" },
+      { rule: "Multiple annotations", desc: "When multiple annotations target the same passage, each is processed independently" },
+    ];
+    const pList = details.createEl("ul", { attr: { style: "font-size: 0.9em; margin-top: 8px;" } });
+    for (const p of placementRules) {
+      const li = pList.createEl("li");
+      li.createEl("strong", { text: p.rule + ": " });
+      li.appendText(p.desc);
+    }
+
     const tip = details.createEl("p", { cls: "penny-help-tip" });
     tip.createEl("strong", { text: "Tip: " });
-    tip.appendText("Press Cmd/Ctrl+P and type \"PENNY\" to see all commands.");
+    tip.appendText("Press Cmd/Ctrl+P and type \"PENNY\" to see all commands. NOTE and RESEARCH tags are never processed -- they're for your own reference.");
   }
 }
 
