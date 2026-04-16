@@ -103,3 +103,47 @@
 .penny-init-modal .setting-item:last-child {
   border-bottom: none;
 }
+
+/* Commands reference table */
+.penny-commands-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 12px 0;
+  font-size: 0.9em;
+}
+
+.penny-commands-table th {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.penny-commands-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.penny-commands-table tr:last-child td {
+  border-bottom: none;
+}
+
+.penny-command-name {
+  font-family: var(--font-monospace);
+  font-size: 0.9em;
+  white-space: nowrap;
+  color: var(--text-accent);
+}
+
+.penny-help-tip {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  font-size: 0.9em;
+  color: var(--text-muted);
+}

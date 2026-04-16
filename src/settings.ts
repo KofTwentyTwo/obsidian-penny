@@ -5,10 +5,11 @@
  * voice rules, behavior, and git integration.
  */
 
-import { PluginSettingTab, Setting, App, Notice } from "obsidian";
+import { PluginSettingTab, Setting, App, Notice, TFolder, TFile } from "obsidian";
 import type PennyPlugin from "./main";
 import { DEFAULT_SYSTEM_PROMPT } from "./types";
 import { ANTHROPIC_MODELS } from "./providers/anthropic";
+import { resolveModel } from "./providers/router";
 
 /**
  * Settings tab for the PENNY plugin.
@@ -62,6 +63,7 @@ export class PennySettingTab extends PluginSettingTab {
     this.renderVoiceSection(containerEl);
     this.renderBehaviorSection(containerEl);
     this.renderGitSection(containerEl);
+    this.renderHelpSection(containerEl);
   }
 
   /**
@@ -172,6 +174,38 @@ export class PennySettingTab extends PluginSettingTab {
             this.plugin.settings.ollamaApiKey = value.trim();
             await this.plugin.saveSettings();
           })
+      );
+
+    new Setting(details)
+      .setName("Refresh Ollama models")
+      .setDesc(
+        "Fetch the list of models installed on your Ollama instance. Useful if you're not sure which models are available."
+      )
+      .addButton((button) =>
+        button.setButtonText("Refresh Models").onClick(async () => {
+          button.setButtonText("Fetching...");
+          button.setDisabled(true);
+          try {
+            const provider = this.plugin.providerRegistry.get("ollama");
+            if (!provider) throw new Error("Ollama provider not registered");
+            const models = await provider.getModels({
+              endpoint: this.plugin.settings.ollamaEndpoint,
+              apiKey: this.plugin.settings.ollamaApiKey,
+            });
+            if (models.length === 0) {
+              new Notice("PENNY: No models found on Ollama. Install models with 'ollama pull <model>'.", 6000);
+            } else {
+              const names = models.map((m) => m.name).join(", ");
+              new Notice(`PENNY: Ollama models available: ${names}`, 8000);
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            new Notice(`PENNY: Failed to fetch Ollama models -- ${msg}`, 6000);
+          } finally {
+            button.setButtonText("Refresh Models");
+            button.setDisabled(false);
+          }
+        })
       );
 
     new Setting(details)
@@ -313,7 +347,15 @@ export class PennySettingTab extends PluginSettingTab {
 
     // Model selector: dropdown for Anthropic, text input for Ollama
     if (route.provider === "anthropic") {
+      // Determine which tier this route represents (for display purposes)
+      const tierLabel = routeKey === "routeLight" ? "light"
+        : routeKey === "routeHeavy" ? "heavy"
+        : "standard";
+      const autoResolvedModel = resolveModel("auto-latest", tierLabel);
+      const autoLabel = `Auto (recommended) -> ${autoResolvedModel}`;
+
       setting.addDropdown((dropdown) => {
+        dropdown.addOption("auto-latest", autoLabel);
         for (const m of anthropicModels) {
           dropdown.addOption(m.id, m.name);
         }
@@ -357,6 +399,24 @@ export class PennySettingTab extends PluginSettingTab {
       text: "All paths are relative to the vault root. These tell PENNY where to find your project files. Leave a path blank to disable that context source.",
       cls: "setting-item-description",
     });
+
+    // Action buttons row
+    const buttonsRow = new Setting(details)
+      .setName("Project detection")
+      .setDesc("Scan the vault for common novel project folder patterns, or validate that configured paths exist.");
+
+    buttonsRow.addButton((button) =>
+      button.setButtonText("Detect structure").onClick(async () => {
+        this.detectProjectStructure();
+      })
+    );
+    buttonsRow.addButton((button) =>
+      button
+        .setButtonText("Validate paths")
+        .onClick(async () => {
+          this.validateProjectPaths();
+        })
+    );
 
     const pathSettings: Array<{
       key: keyof typeof this.plugin.settings;
@@ -586,6 +646,118 @@ export class PennySettingTab extends PluginSettingTab {
   }
 
   /**
+   * Detect project structure by scanning the vault for common patterns.
+   */
+  private async detectProjectStructure(): Promise<void> {
+    const vault = this.plugin.app.vault;
+    const allFolders = vault.getAllLoadedFiles().filter((f) => f instanceof TFolder) as TFolder[];
+    const allFiles = vault.getAllLoadedFiles().filter((f) => f instanceof TFile) as TFile[];
+
+    const folderPaths = allFolders.map((f) => f.path);
+    const filePaths = allFiles.map((f) => f.path);
+
+    // Detection patterns: key -> { type: "folder"|"file", patterns: string[] }
+    const detections: Array<{
+      key: string;
+      type: "folder" | "file";
+      patterns: RegExp[];
+      label: string;
+    }> = [
+      { key: "draftsFolder", type: "folder", patterns: [/^(.*\/)?04-drafts$/], label: "Drafts folder" },
+      { key: "styleGuide", type: "file", patterns: [/^(.*\/)?06-reference\/style-guide\.md$/], label: "Style guide" },
+      { key: "voiceTests", type: "file", patterns: [/^(.*\/)?06-reference\/voice-tests\.md$/], label: "Voice tests" },
+      { key: "characterSheetsFolder", type: "folder", patterns: [/^(.*\/)?02-characters$/], label: "Character sheets" },
+      { key: "plotOutlinesFolder", type: "folder", patterns: [/^(.*\/)?03-plot$/], label: "Plot outlines" },
+      { key: "wikiFolder", type: "folder", patterns: [/^(.*\/)?05-wiki$/], label: "Wiki folder" },
+      { key: "seriesBible", type: "file", patterns: [/^(.*\/)?00-series\/series-bible\.md$/], label: "Series bible" },
+      { key: "themesFile", type: "file", patterns: [/^(.*\/)?00-series\/themes\.md$/], label: "Themes file" },
+      { key: "reviewsFolder", type: "folder", patterns: [/^(.*\/)?07-reviews$/], label: "Reviews folder" },
+    ];
+
+    let detectedCount = 0;
+    const detected: string[] = [];
+
+    for (const det of detections) {
+      const searchPaths = det.type === "folder" ? folderPaths : filePaths;
+      for (const pattern of det.patterns) {
+        const match = searchPaths.find((p) => pattern.test(p));
+        if (match) {
+          const settings = this.plugin.settings as unknown as Record<string, string>;
+          // Only fill if currently empty
+          if (!settings[det.key]) {
+            settings[det.key] = match;
+            detectedCount++;
+            detected.push(`${det.label}: ${match}`);
+          }
+          break;
+        }
+      }
+    }
+
+    if (detectedCount > 0) {
+      await this.plugin.saveSettings();
+      new Notice(
+        `PENNY: Detected ${detectedCount} path(s):\n${detected.join("\n")}`,
+        8000,
+      );
+      this.display(); // Re-render to show detected paths
+    } else {
+      new Notice(
+        "PENNY: No project structure detected, or all paths are already configured.",
+        6000,
+      );
+    }
+  }
+
+  /**
+   * Validate that all configured project paths exist in the vault.
+   */
+  private validateProjectPaths(): void {
+    const vault = this.plugin.app.vault;
+    const settings = this.plugin.settings;
+
+    const checks: Array<{ label: string; path: string }> = [
+      { label: "Drafts folder", path: settings.draftsFolder },
+      { label: "Style guide", path: settings.styleGuide },
+      { label: "Voice tests", path: settings.voiceTests },
+      { label: "Character sheets", path: settings.characterSheetsFolder },
+      { label: "Plot outlines", path: settings.plotOutlinesFolder },
+      { label: "Wiki folder", path: settings.wikiFolder },
+      { label: "Series bible", path: settings.seriesBible },
+      { label: "Themes file", path: settings.themesFile },
+      { label: "Reviews folder", path: settings.reviewsFolder },
+      { label: "Activity log", path: settings.activityLogFolder },
+    ];
+
+    const results: string[] = [];
+    let okCount = 0;
+    let missingCount = 0;
+    let emptyCount = 0;
+
+    for (const check of checks) {
+      if (!check.path) {
+        results.push(`[not set] ${check.label}`);
+        emptyCount++;
+      } else {
+        const abstractFile = vault.getAbstractFileByPath(check.path);
+        if (abstractFile) {
+          results.push(`[OK] ${check.label}: ${check.path}`);
+          okCount++;
+        } else {
+          results.push(`[MISSING] ${check.label}: ${check.path}`);
+          missingCount++;
+        }
+      }
+    }
+
+    const summary = `Valid: ${okCount}, Missing: ${missingCount}, Not set: ${emptyCount}`;
+    new Notice(
+      `PENNY: Path Validation\n${summary}\n\n${results.join("\n")}`,
+      12000,
+    );
+  }
+
+  /**
    * Git -- auto-commit, auto-push, commit message format.
    */
   private renderGitSection(containerEl: HTMLElement): void {
@@ -635,5 +807,48 @@ export class PennySettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+  }
+
+  /**
+   * Help -- command reference and tips.
+   */
+  private renderHelpSection(containerEl: HTMLElement): void {
+    const details = containerEl.createEl("details");
+    details.createEl("summary", { text: "Commands Reference" });
+    details.createEl("p", {
+      text: "All PENNY commands available in the command palette (Cmd/Ctrl+P).",
+      cls: "setting-item-description",
+    });
+
+    const commands: Array<{ name: string; desc: string }> = [
+      { name: "PENNY: Initialize project", desc: "Scaffold a new novel project structure" },
+      { name: "PENNY: Process this chapter", desc: "Process annotations in the active chapter" },
+      { name: "PENNY: Process all chapters", desc: "Process all annotated chapters in the current book" },
+      { name: "PENNY: Dry run", desc: "Show what would change without processing" },
+      { name: "PENNY: Migrate chapters", desc: "Convert flat chapter files to versioned folders" },
+      { name: "PENNY: Show status", desc: "Show annotation counts and version info" },
+      { name: "PENNY: New chapter", desc: "Create a new chapter from template" },
+      { name: "PENNY: New character", desc: "Create a new character from template" },
+      { name: "PENNY: Commit progress", desc: "Git commit with auto-generated message" },
+      { name: "PENNY: Push", desc: "Git push to remote" },
+      { name: "PENNY: Commit and push", desc: "Both in one action" },
+    ];
+
+    const table = details.createEl("table", { cls: "penny-commands-table" });
+    const thead = table.createEl("thead");
+    const headerRow = thead.createEl("tr");
+    headerRow.createEl("th", { text: "Command" });
+    headerRow.createEl("th", { text: "Description" });
+
+    const tbody = table.createEl("tbody");
+    for (const cmd of commands) {
+      const row = tbody.createEl("tr");
+      row.createEl("td", { text: cmd.name, cls: "penny-command-name" });
+      row.createEl("td", { text: cmd.desc });
+    }
+
+    const tip = details.createEl("p", { cls: "penny-help-tip" });
+    tip.createEl("strong", { text: "Tip: " });
+    tip.appendText("Press Cmd/Ctrl+P and type \"PENNY\" to see all commands.");
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TAG_COMPLEXITY, getRoute } from "../../src/providers/router";
+import { TAG_COMPLEXITY, getRoute, resolveModel } from "../../src/providers/router";
 import type { RouteConfig, ComplexityTier } from "../../src/providers/router";
 
 const DEFAULT_CONFIG: RouteConfig = {
@@ -132,5 +132,57 @@ describe("getRoute", () => {
     expect(getRoute("CUT", cloudConfig)).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
     expect(getRoute("EXPAND", cloudConfig)).toEqual({ provider: "anthropic", model: "claude-sonnet-4-6" });
     expect(getRoute("DIALOG", cloudConfig)).toEqual({ provider: "anthropic", model: "claude-opus-4-6" });
+  });
+
+  it("resolves auto-latest to tier-appropriate models", () => {
+    const autoConfig: RouteConfig = {
+      light: { provider: "anthropic", model: "auto-latest" },
+      standard: { provider: "anthropic", model: "auto-latest" },
+      heavy: { provider: "anthropic", model: "auto-latest" },
+    };
+    expect(getRoute("CUT", autoConfig)).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
+    expect(getRoute("PACING", autoConfig)).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
+    expect(getRoute("TONE", autoConfig)).toEqual({ provider: "anthropic", model: "claude-sonnet-4-6" });
+    expect(getRoute("EXPAND", autoConfig)).toEqual({ provider: "anthropic", model: "claude-sonnet-4-6" });
+    expect(getRoute("REWRITE", autoConfig)).toEqual({ provider: "anthropic", model: "claude-opus-4-6" });
+    expect(getRoute("DIALOG", autoConfig)).toEqual({ provider: "anthropic", model: "claude-opus-4-6" });
+  });
+
+  it("passes through non-auto-latest models unchanged", () => {
+    const config: RouteConfig = {
+      light: { provider: "anthropic", model: "claude-haiku-4-5" },
+      standard: { provider: "anthropic", model: "claude-sonnet-4-6" },
+      heavy: { provider: "anthropic", model: "auto-latest" },
+    };
+    expect(getRoute("CUT", config)).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
+    expect(getRoute("REWRITE", config)).toEqual({ provider: "anthropic", model: "claude-opus-4-6" });
+  });
+});
+
+describe("resolveModel", () => {
+  it("resolves auto-latest for light tier to haiku", () => {
+    expect(resolveModel("auto-latest", "light")).toBe("claude-haiku-4-5");
+  });
+
+  it("resolves auto-latest for standard tier to sonnet", () => {
+    expect(resolveModel("auto-latest", "standard")).toBe("claude-sonnet-4-6");
+  });
+
+  it("resolves auto-latest for heavy tier to opus", () => {
+    expect(resolveModel("auto-latest", "heavy")).toBe("claude-opus-4-6");
+  });
+
+  it("resolves auto-latest for unknown tier to sonnet (default)", () => {
+    expect(resolveModel("auto-latest", "unknown")).toBe("claude-sonnet-4-6");
+  });
+
+  it("passes through specific model names unchanged", () => {
+    expect(resolveModel("claude-sonnet-4-6", "light")).toBe("claude-sonnet-4-6");
+    expect(resolveModel("claude-opus-4-6", "standard")).toBe("claude-opus-4-6");
+    expect(resolveModel("llama3.2", "heavy")).toBe("llama3.2");
+  });
+
+  it("passes through empty string unchanged", () => {
+    expect(resolveModel("", "standard")).toBe("");
   });
 });
