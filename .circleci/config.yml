@@ -1,59 +1,8 @@
 version: 2.1
-
+setup: true
 orbs:
-  node: circleci/node@6.1.0
-
-jobs:
-  test:
-    docker:
-      - image: cimg/node:20.11
-    steps:
-      - checkout
-      - node/install-packages:
-          pkg-manager: npm
-      - run:
-          name: Type check
-          command: npx tsc --noEmit --skipLibCheck
-      - run:
-          name: Run tests
-          command: npm test
-      - run:
-          name: Build
-          command: npm run build
-      - persist_to_workspace:
-          root: .
-          paths:
-            - main.js
-            - manifest.json
-            - styles.css
-
-  publish:
-    docker:
-      - image: cimg/node:20.11
-    steps:
-      - checkout
-      - attach_workspace:
-          at: .
-      - run:
-          name: Create release
-          command: |
-            VERSION=$(node -p "require('./manifest.json').version")
-            npx gh-release --assets main.js,manifest.json,styles.css --tag "$VERSION" --title "v$VERSION" || true
-
+  munitor: kof22/munitor@0.1
 workflows:
-  test_all:
+  setup:
     jobs:
-      - test
-
-  publish_release:
-    jobs:
-      - test:
-          filters:
-            branches:
-              only: main
-      - publish:
-          requires:
-            - test
-          filters:
-            branches:
-              only: main
+      - munitor/generate_pipeline
