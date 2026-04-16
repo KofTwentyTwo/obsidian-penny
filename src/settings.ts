@@ -47,9 +47,9 @@ export class PennySettingTab extends PluginSettingTab {
       const a = links.createEl("a", { text: label, href: url });
       a.setAttr("target", "_blank");
     };
-    addLink("Documentation", "https://github.com/KofTwentyTwo/obsidian-penny/tree/main/docs");
+    addLink("Documentation", "https://github.com/KofTwentyTwo/obsidian-penny/tree/develop/docs");
     links.createSpan({ text: " | " });
-    addLink("Getting Started", "https://github.com/KofTwentyTwo/obsidian-penny/blob/main/docs/getting-started.md");
+    addLink("Getting Started", "https://github.com/KofTwentyTwo/obsidian-penny/blob/develop/docs/getting-started.md");
     links.createSpan({ text: " | " });
     addLink("Report a Bug", "https://github.com/KofTwentyTwo/obsidian-penny/issues");
     links.createSpan({ text: " | " });

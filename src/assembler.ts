@@ -68,8 +68,11 @@ export function assembleNewVersion(
     }
     const prev = resolved[resolved.length - 1];
     // Since sorted descending by lineStart, prev.lineStart >= rev.lineStart
+    // Same-line inline annotations are NOT overlaps -- they target different parts of the line
+    const bothInline = prev.annotation.scope === "inline" && rev.annotation.scope === "inline"
+      && prev.annotation.lineStart === rev.annotation.lineStart;
     // Overlap: prev.lineStart <= rev.lineEnd (prev starts before rev ends)
-    if (prev.annotation.lineStart <= rev.annotation.lineEnd) {
+    if (!bothInline && prev.annotation.lineStart <= rev.annotation.lineEnd) {
       // Keep the annotation with the larger scope; skip the smaller one
       const prevSpan = prev.annotation.lineEnd - prev.annotation.lineStart;
       const revSpan = rev.annotation.lineEnd - rev.annotation.lineStart;

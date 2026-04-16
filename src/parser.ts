@@ -44,7 +44,8 @@ function hashAnnotation(tag: string, instruction: string, originalText: string):
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
   h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   const n = 4294967296 * (2097151 & h2) + (h1 >>> 0);
-  return n.toString(16).padStart(12, "0").slice(0, 12);
+  // Use slice(-12) to keep the least-significant (most entropic) hex digits
+  return n.toString(16).padStart(12, "0").slice(-12);
 }
 
 function isValidTag(tag: string): tag is AnnotationTag {

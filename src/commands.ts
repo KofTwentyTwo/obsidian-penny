@@ -183,7 +183,7 @@ export function registerCommands(plugin: PennyPlugin): void {
  *
  * Returns true only if every required provider is usable.
  */
-function requireProvider(plugin: PennyPlugin): boolean {
+export function requireProvider(plugin: PennyPlugin): boolean {
   const s = plugin.settings;
 
   const routes: Array<{ tier: string; provider: string }> = s.useSameModelForAll
