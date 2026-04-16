@@ -262,6 +262,17 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         provider: route.provider,
         model: route.model,
       });
+
+      completedCount++;
+      onProgress?.({
+        type: "annotation-done",
+        current: i + 1,
+        total: toProcess.length,
+        tag: annotation.tag,
+        line: annotation.lineStart,
+        wordCount: revisedWords,
+        message: `[${i + 1}/${toProcess.length}] ${annotation.tag} line ${annotation.lineStart} ... done (${revisedWords} words)`,
+      });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       const errorText = `%% AGENT-ERROR(${annotation.tag}): ${errMsg} %%\n${annotation.originalText}`;
@@ -272,11 +283,26 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         description: `API error for [${annotation.tag}]: ${errMsg}`,
       });
       hadErrors = true;
+      onProgress?.({
+        type: "annotation-error",
+        current: i + 1,
+        total: toProcess.length,
+        tag: annotation.tag,
+        line: annotation.lineStart,
+        error: errMsg,
+        message: `[${i + 1}/${toProcess.length}] ${annotation.tag} line ${annotation.lineStart} ... ERROR: ${errMsg}`,
+      });
     }
   }
 
   // (f) Assemble new version
   const newVer = nextVersion(currentVersion);
+
+  onProgress?.({
+    type: "assembling",
+    message: `Assembling v${newVer}...`,
+  });
+
   const assemblyResult = assembleNewVersion(content, revisions, newVer);
   const assembled = assemblyResult.content;
 
@@ -350,6 +376,11 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
     voiceCompliance,
   });
   const logLine = formatLogEntry(logEntry);
+
+  onProgress?.({
+    type: "complete",
+    message: `Done. ${changes.length} annotation${changes.length === 1 ? "" : "s"} processed, v${newVer} created.`,
+  });
 
   return {
     newContent,

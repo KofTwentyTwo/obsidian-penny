@@ -17,6 +17,7 @@ import { getReviewFilePath } from "./reviewer";
 import { getLogFilePath } from "./logger";
 import { runPipeline } from "./pipeline";
 import type { PipelineResult } from "./pipeline";
+import { PennyProgressModal } from "./progress-modal";
 import { globMatch } from "./utils";
 import { readVersion, nextVersion } from "./versioner";
 import { generateStateJson } from "./migrate";
@@ -489,6 +490,13 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       createdPaths.push(p);
     }
 
+    // Create and open the progress modal (unless running silently, e.g. batch)
+    let modal: PennyProgressModal | null = null;
+    if (!options?.silent) {
+      modal = new PennyProgressModal(plugin.app, `Processing ${chapterId}`);
+      modal.open();
+    }
+
     // Run the pipeline
     const result = await runPipeline({
       content,
@@ -504,9 +512,12 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
         }
         return plugin.providerRegistry.get(name);
       },
+      onProgress: (event) => modal?.update(event),
+      isCancelled: () => modal?.isCancelled() ?? false,
     });
 
     if (!result) {
+      if (modal) modal.close();
       if (!options?.silent) {
         new Notice(`PENNY: No new annotations to process in ${file.basename}.`);
       }
@@ -580,6 +591,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (modal) modal.close();
     new Notice(`PENNY: Error processing ${file.basename} -- ${message}`);
     return null;
   } finally {
