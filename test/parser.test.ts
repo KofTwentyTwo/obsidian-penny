@@ -327,4 +327,108 @@ describe("parseAnnotations", () => {
       expect(result).toHaveLength(0);
     });
   });
+
+  describe("block scope with {{ }}", () => {
+    it("scopes to content inside {{ }} markers", () => {
+      const content = [
+        "{{",
+        "First paragraph of the block.",
+        "",
+        "Second paragraph of the block.",
+        "}}",
+        "%% REWRITE: rewrite the whole block %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(1);
+      expect(result[0].scope).toBe("block");
+      expect(result[0].originalText).toContain("First paragraph");
+      expect(result[0].originalText).toContain("Second paragraph");
+    });
+
+    it("does not include {{ }} markers in originalText", () => {
+      const content = [
+        "{{",
+        "The target text.",
+        "}}",
+        "%% TONE: make it darker %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(1);
+      expect(result[0].originalText).toBe("The target text.");
+      expect(result[0].originalText).not.toContain("{{");
+      expect(result[0].originalText).not.toContain("}}");
+    });
+
+    it("handles blank line between }} and annotation", () => {
+      const content = [
+        "{{",
+        "Block content here.",
+        "}}",
+        "",
+        "%% EXPAND: add more detail %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(1);
+      expect(result[0].scope).toBe("block");
+      expect(result[0].originalText).toBe("Block content here.");
+    });
+
+    it("captures multi-paragraph blocks", () => {
+      const content = [
+        "{{",
+        "I grind the beans. Burr grinder, not blade.",
+        "",
+        "I fill the kettle. 205 degrees.",
+        "",
+        "The grinder is the loudest thing.",
+        "",
+        "I pour it black.",
+        "}}",
+        "%% REWRITE: change to espresso %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(1);
+      expect(result[0].scope).toBe("block");
+      expect(result[0].originalText).toContain("I grind the beans");
+      expect(result[0].originalText).toContain("I pour it black.");
+    });
+
+    it("falls back to paragraph scope when no matching {{ found", () => {
+      const content = [
+        "Some text above.",
+        "}}",
+        "%% REWRITE: rewrite this %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(1);
+      // }} without matching {{ -- parser falls through, finds paragraph above
+      expect(result[0].scope).toBe("paragraph");
+    });
+
+    it("handles multiple block-scoped annotations", () => {
+      const content = [
+        "{{",
+        "First block.",
+        "}}",
+        "%% REWRITE: fix first block %%",
+        "",
+        "{{",
+        "Second block.",
+        "}}",
+        "%% TONE: change tone of second block %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(2);
+      expect(result[0].scope).toBe("block");
+      expect(result[0].originalText).toBe("First block.");
+      expect(result[1].scope).toBe("block");
+      expect(result[1].originalText).toBe("Second block.");
+    });
+  });
 });

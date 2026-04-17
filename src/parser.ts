@@ -10,6 +10,7 @@
  * - Multi-line:  `%% TAG: instruction text\ncontinued...\n%%`
  *
  * Scope resolution determines WHAT each annotation targets:
+ * - Block:     annotation after a `}}` line -> targets everything inside `{{ ... }}`
  * - Inline:    annotation shares a line with prose -> targets that line
  * - Paragraph: annotation on its own line -> targets the paragraph above
  * - Section:   annotation below a heading -> targets everything to the next heading
@@ -107,14 +108,25 @@ function isBlank(line: string): boolean {
   return line.trim().length === 0;
 }
 
+/** True when a line is a block-scope opening marker `{{` (with optional whitespace). */
+function isBlockOpen(line: string): boolean {
+  return line.trim() === "{{";
+}
+
+/** True when a line is a block-scope closing marker `}}` (with optional whitespace). */
+function isBlockClose(line: string): boolean {
+  return line.trim() === "}}";
+}
+
 /**
  * Determine the scope, lineStart, and lineEnd for an annotation found at
  * `annotationLineIndex` in the array of `lines`.
  *
- * Resolution logic:
+ * Resolution logic (checked in order):
  * 1. If the annotation shares its line with non-annotation text -> "inline"
- * 2. If the nearest non-blank line above is a heading -> "section" (to next same-level heading)
- * 3. Otherwise -> "paragraph" (the paragraph block above the annotation)
+ * 2. If the nearest non-blank line above is `}}` -> "block" (find matching `{{`)
+ * 3. If the nearest non-blank line above is a heading -> "section" (to next same-level heading)
+ * 4. Otherwise -> "paragraph" (the paragraph block above the annotation)
  *
  * @param lines               - All lines of the chapter file
  * @param annotationLineIndex - Zero-based index of the line containing the annotation
@@ -123,14 +135,12 @@ function isBlank(line: string): boolean {
 function resolveScope(
   lines: string[],
   annotationLineIndex: number,
-): { scope: "inline" | "paragraph" | "section"; lineStart: number; lineEnd: number } {
+): { scope: "inline" | "paragraph" | "section" | "block"; lineStart: number; lineEnd: number } {
   const annoLine = lines[annotationLineIndex];
 
   // --- Check: is the annotation inline (shares a line with other text)? ---
   const stripped = stripAnnotations(annoLine).trim();
   if (stripped.length > 0) {
-    // Inline: the annotation sits within a paragraph line.
-    // Scope = that single line.
     return { scope: "inline", lineStart: annotationLineIndex, lineEnd: annotationLineIndex };
   }
 
@@ -142,10 +152,24 @@ function resolveScope(
     above--;
   }
 
+  // --- Check: is the line above a `}}` block close marker? ---
+  if (above >= 0 && isBlockClose(lines[above])) {
+    const closeIdx = above;
+    // Search upward for the matching `{{`
+    let openIdx = closeIdx - 1;
+    while (openIdx >= 0) {
+      if (isBlockOpen(lines[openIdx])) break;
+      openIdx--;
+    }
+    if (openIdx >= 0) {
+      // Block scope: everything between {{ and }} (exclusive of the markers)
+      return { scope: "block", lineStart: openIdx + 1, lineEnd: closeIdx - 1 };
+    }
+    // No matching {{ found -- fall through to other scope types
+  }
+
   // --- Check: is the line above a heading? ---
   if (above >= 0 && isHeading(lines[above])) {
-    // Section scope: everything from the heading to the next heading of equal
-    // or higher level (or EOF).
     const level = headingLevel(lines[above]);
     let end = annotationLineIndex + 1;
     while (end < lines.length) {
@@ -153,15 +177,11 @@ function resolveScope(
       if (hl > 0 && hl <= level) break;
       end++;
     }
-    // lineEnd is the last line before the next heading (or last line of file).
     return { scope: "section", lineStart: above, lineEnd: end - 1 };
   }
 
   // --- Otherwise: paragraph scope (paragraph immediately above). ---
-  // Walk upward from `above` to find the start of that paragraph (first blank
-  // line or start of file).
   if (above < 0) {
-    // Nothing above -- degenerate; point at annotation itself.
     return { scope: "paragraph", lineStart: annotationLineIndex, lineEnd: annotationLineIndex };
   }
   let paraStart = above;

@@ -225,59 +225,77 @@ He mentioned the Tao of Programming, quoting the passage about the master progra
 
 ## Scope Rules
 
-Where you place the annotation determines what passage PENNY applies it to.
+Where you place the annotation determines what text PENNY applies it to. The key rule: **annotations go AFTER the text they target.** PENNY always looks upward from the annotation to find its target.
 
-### Inline (within a paragraph)
+### Single paragraph
 
-The annotation applies to the sentence or clause immediately before it.
-
-```markdown
-The server hummed quietly in the corner %% REWRITE: more specific -- what kind of hum, what frequency %% while she typed.
-```
-
-PENNY revises only "The server hummed quietly in the corner" and preserves the rest of the sentence.
-
-### Between paragraphs (own line)
-
-The annotation applies to the paragraph immediately above it.
+Put the annotation on its own line after the paragraph you want to change.
 
 ```markdown
-She stared at the terminal output. The numbers scrolled past faster than she could read. Something was wrong with the allocation pattern -- the intervals were shrinking when they should have been growing.
-
-%% EXPAND: Add what she does next. Does she talk to Rabbit? Run a diagnostic? Show her process. %%
+She stared at the terminal output. The numbers scrolled past faster than
+she could read. Something was wrong with the allocation pattern.
+%% EXPAND: Add what she does next. Does she talk to Rabbit? Show her process. %%
 
 The next morning, she biked to campus.
 ```
 
 PENNY revises the paragraph above the annotation. The paragraph below is untouched.
 
-### After a heading (line after `#`)
+### Multiple paragraphs (block scope)
 
-The annotation applies to the entire section up to the next heading of equal or higher level.
+Wrap the target text in `{{ }}` markers, then place the annotation after the closing `}}`. This is the easiest way to target a multi-paragraph passage.
+
+```markdown
+{{
+I grind the beans. Burr grinder, not blade. Blade grinders chop unevenly.
+
+I fill the kettle. The thermometer clip goes on the side. 205 degrees.
+
+The grinder is the loudest thing in the house at this hour.
+
+I pour it black.
+}}
+%% REWRITE: Change from pour-over to espresso. She makes americanos --
+pulls a shot on a small espresso machine, then adds hot water. Same
+precision, same obsession, but espresso. Keep "I pour it black." %%
+```
+
+PENNY revises everything between `{{` and `}}`. The markers themselves are not included in the output. You can put a blank line between `}}` and the annotation if you prefer.
+
+### Inline (within a line)
+
+Put the annotation on the same line as the text. It applies to that line only.
+
+```markdown
+The server hummed quietly in the corner %% REWRITE: more specific -- what kind of hum, what frequency %% while she typed.
+```
+
+PENNY revises only "The server hummed quietly in the corner" and preserves the rest.
+
+### Full section (under a heading)
+
+Put the annotation right after a heading. It targets everything under that heading until the next heading of equal or higher level.
 
 ```markdown
 ## The Lab
-
 %% TONE: This whole section is too formal. Loosen it up to match her voice. %%
 
-She entered the laboratory and observed the equipment arranged upon the workbenches. The fluorescent lighting cast a sterile glow across the room. She proceeded to her workstation and initiated the boot sequence.
+She entered the laboratory and observed the equipment...
 ```
 
 PENNY revises everything from "She entered..." to the next `##` heading.
 
 ### Multiple annotations on the same passage
 
-**Planned for future version.** Currently, each annotation is processed independently. If multiple annotations target the same passage, each one generates a separate revision pass applied in sequence (bottom to top).
+Each annotation is processed independently. If multiple annotations target the same passage, each generates a separate revision pass applied in sequence.
 
 ```markdown
 "I suppose we might consider an alternative approach," she said thoughtfully.
-
 %% DIALOG: She doesn't talk like this. Too formal, too hedged. %%
 %% CHARACTER: Check her character sheet. She's direct and blunt. %%
-%% TONE: Match the voice tests. %%
 ```
 
-Each annotation above is processed as a separate revision. The DIALOG annotation is applied first, then CHARACTER, then TONE. For best results when multiple concerns apply to one passage, combine them into a single annotation with all instructions.
+For best results when multiple concerns apply to one passage, combine them into a single annotation with all instructions.
 
 ## Tips for Writing Good Instructions
 

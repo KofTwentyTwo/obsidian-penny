@@ -330,8 +330,8 @@ export interface AnnotatedSection {
   lineStart: number;
   /** Zero-based line index where the targeted passage ends (inclusive). */
   lineEnd: number;
-  /** How the annotation's target was determined: inline text, surrounding paragraph, or heading section. */
-  scope: "inline" | "paragraph" | "section";
+  /** How the annotation's target was determined: inline text, surrounding paragraph, heading section, or explicit {{ }} block. */
+  scope: "inline" | "paragraph" | "section" | "block";
   /** True if this tag triggers LLM processing; false for passthrough tags. */
   actionable: boolean;
   /** Deterministic hash of (tag, instruction, originalText) for idempotency tracking. */

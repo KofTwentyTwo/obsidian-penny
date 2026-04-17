@@ -1,6 +1,8 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
+import { copyFileSync, existsSync } from "fs";
+import { resolve } from "path";
 
 const banner = `/*
 PENNY - Prose Engine for Narrative, Notes, and Yarns
@@ -41,6 +43,16 @@ const context = await esbuild.context({
 
 if (prod) {
   await context.rebuild();
+
+  // Auto-deploy to the Obsidian vault's plugin folder if it exists
+  const vaultPluginDir = resolve("..", "Books", ".obsidian", "plugins", "penny");
+  if (existsSync(vaultPluginDir)) {
+    copyFileSync("main.js", resolve(vaultPluginDir, "main.js"));
+    copyFileSync("styles.css", resolve(vaultPluginDir, "styles.css"));
+    copyFileSync("manifest.json", resolve(vaultPluginDir, "manifest.json"));
+    console.log(`Deployed to ${vaultPluginDir}`);
+  }
+
   process.exit(0);
 } else {
   await context.watch();

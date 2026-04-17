@@ -1358,23 +1358,49 @@ export class PennySettingTab extends PluginSettingTab {
       exCell.createEl("code", { text: d.example, attr: { style: "font-size: 0.85em; word-break: break-word;" } });
     }
 
-    details.createEl("h4", { text: "Placement Rules", attr: { style: "margin-top: 16px;" } });
-    const placementRules: Array<{ rule: string; desc: string }> = [
-      { rule: "Inline (within a paragraph)", desc: "Applies to the sentence or clause immediately before the %%" },
-      { rule: "Between paragraphs (own line)", desc: "Applies to the paragraph immediately above" },
-      { rule: "After a heading (line after #)", desc: "Applies to the entire section up to the next heading of equal or higher level" },
-      { rule: "Multiple annotations", desc: "When multiple annotations target the same passage, each is processed independently" },
+    details.createEl("h4", { text: "How Annotations Target Text", attr: { style: "margin-top: 16px;" } });
+    details.createEl("p", {
+      text: "Annotations always go AFTER the text they target. PENNY looks upward from the annotation to find what it applies to.",
+      cls: "setting-item-description",
+      attr: { style: "font-weight: 600; margin-bottom: 8px;" },
+    });
+
+    const scopeRules: Array<{ title: string; desc: string; example: string }> = [
+      {
+        title: "Single paragraph",
+        desc: "Put the annotation on its own line after the paragraph.",
+        example: "She walked into the room and sat down.\n%% REWRITE: More atmosphere %%",
+      },
+      {
+        title: "Multiple paragraphs (block scope)",
+        desc: "Wrap the target text in {{ }} markers. Put the annotation after the closing }}.",
+        example: "{{\nFirst paragraph of the scene.\n\nSecond paragraph.\n\nThird paragraph.\n}}\n%% REWRITE: Rewrite this whole section %%",
+      },
+      {
+        title: "Inline (within a line)",
+        desc: "Put the annotation on the same line as the text.",
+        example: "She felt happy. %% TONE: too direct, show don't tell %%",
+      },
+      {
+        title: "Full section (under a heading)",
+        desc: "Put the annotation right after a heading. Targets everything until the next heading of the same level.",
+        example: "## The Coffee Ritual\n%% REWRITE: Change to espresso %%\n\nShe ground the beans...",
+      },
     ];
-    const pList = details.createEl("ul", { attr: { style: "font-size: 0.9em; margin-top: 8px;" } });
-    for (const p of placementRules) {
-      const li = pList.createEl("li");
-      li.createEl("strong", { text: p.rule + ": " });
-      li.appendText(p.desc);
+
+    for (const rule of scopeRules) {
+      const ruleDiv = details.createDiv({ attr: { style: "margin: 12px 0; padding: 10px 14px; border: 1px solid var(--background-modifier-border); border-radius: 6px;" } });
+      ruleDiv.createEl("strong", { text: rule.title, attr: { style: "display: block; margin-bottom: 4px;" } });
+      ruleDiv.createEl("span", { text: rule.desc, cls: "setting-item-description", attr: { style: "display: block; margin-bottom: 6px;" } });
+      ruleDiv.createEl("pre", {
+        text: rule.example,
+        attr: { style: "background: var(--background-secondary); padding: 8px 12px; border-radius: 4px; font-size: 0.82em; white-space: pre-wrap; margin: 0;" },
+      });
     }
 
     const tip = details.createEl("p", { cls: "penny-help-tip" });
     tip.createEl("strong", { text: "Tip: " });
-    tip.appendText("Press Cmd/Ctrl+P and type \"PENNY\" to see all commands. NOTE and RESEARCH tags are never processed -- they're for your own reference.");
+    tip.appendText("The {{ }} block scope is the easiest way to target multiple paragraphs. Press Cmd/Ctrl+P and type \"PENNY\" to see all commands.");
   }
 
   // ---------------------------------------------------------------------------
