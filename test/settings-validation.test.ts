@@ -252,17 +252,20 @@ She walked into the room and sat down.
     expect(countWithMarker).toBe(8);
   });
 
-  it("verboseLogging controls console.log output", async () => {
+  it("logLevel controls console output verbosity", async () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    // verboseLogging is a settings flag. The pipeline itself does not
+    // logLevel is a settings flag. The pipeline itself does not
     // directly call console.log (that happens in the command layer), but
     // the setting must be propagated. Verify the setting value is accessible.
-    const settings = makeSettings({ verboseLogging: true });
-    expect(settings.verboseLogging).toBe(true);
+    const settings = makeSettings({ logLevel: "debug" });
+    expect(settings.logLevel).toBe("debug");
 
-    const settingsOff = makeSettings({ verboseLogging: false });
-    expect(settingsOff.verboseLogging).toBe(false);
+    const settingsOff = makeSettings({ logLevel: "off" });
+    expect(settingsOff.logLevel).toBe("off");
+
+    const settingsInfo = makeSettings({ logLevel: "info" });
+    expect(settingsInfo.logLevel).toBe("info");
 
     consoleSpy.mockRestore();
   });

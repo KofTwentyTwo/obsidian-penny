@@ -8,7 +8,7 @@
  * @module main
  */
 
-import { Plugin, Notice, TFile, requestUrl } from "obsidian";
+import { Menu, Plugin, Notice, TFile, requestUrl } from "obsidian";
 import { PennySettingTab } from "./settings";
 import { PennyStatusBar } from "./statusbar";
 import { registerCommands, processChapter, requireProvider } from "./commands";

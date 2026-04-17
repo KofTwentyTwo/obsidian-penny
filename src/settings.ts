@@ -8,7 +8,7 @@
 import { PluginSettingTab, Setting, App, Notice, TFolder, TFile, FuzzySuggestModal } from "obsidian";
 import type PennyPlugin from "./main";
 import { DEFAULT_SYSTEM_PROMPT } from "./types";
-import type { LogLevel } from "./types";
+import type { LogLevel, PennySettings } from "./types";
 import { showPennyError } from "./error-modal";
 import { ANTHROPIC_MODELS } from "./providers/anthropic";
 import { resolveModel } from "./providers/router";
@@ -106,7 +106,7 @@ export class PennySettingTab extends PluginSettingTab {
       );
 
     // Anthropic models -- show static list + fetch from API if key is set
-    const anthropicModelsSetting = new Setting(details)
+    new Setting(details)
       .setName("Available Claude models")
       .setDesc("Models available for use with Anthropic.");
     const anthropicModelListEl = details.createEl("div", { cls: "penny-model-list" });
@@ -164,7 +164,9 @@ export class PennySettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             const trimmed = value.trim();
             if (trimmed && !trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-              new Notice("PENNY: Ollama endpoint must start with http:// or https://");
+              showPennyError(this.app,
+                "Invalid Ollama endpoint",
+                "Ollama endpoint must start with http:// or https://");
               return;
             }
             this.plugin.settings.ollamaEndpoint = trimmed;
@@ -221,10 +223,9 @@ export class PennySettingTab extends PluginSettingTab {
               apiKey: this.plugin.settings.ollamaApiKey,
             });
             if (result) {
-              new Notice(
-                `PENNY: Ollama test failed -- ${result}`,
-                6000,
-              );
+              showPennyError(this.app,
+                "Ollama connection failed",
+                result);
             } else {
               new Notice(
                 "PENNY: Ollama connection OK.",
@@ -233,10 +234,7 @@ export class PennySettingTab extends PluginSettingTab {
             }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            new Notice(
-              `PENNY: Ollama test failed -- ${msg}`,
-              6000,
-            );
+            showPennyError(this.app, "Ollama test failed", msg);
           } finally {
             button.setButtonText("Test Connection");
             button.setDisabled(false);
@@ -718,7 +716,7 @@ export class PennySettingTab extends PluginSettingTab {
         dropdown.addOption("off", "Off (silent)");
         dropdown.setValue(this.plugin.settings.logLevel);
         dropdown.onChange(async (value) => {
-          this.plugin.settings.logLevel = value as import("./types").LogLevel;
+          this.plugin.settings.logLevel = value as LogLevel;
           await this.plugin.saveSettings();
         });
       });

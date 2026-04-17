@@ -1,17 +1,36 @@
 /**
  * PENNY - Context Assembly (pure logic)
  *
- * Assembles context from file contents for a revision prompt.
- * The Obsidian file-reading happens in the plugin shell; this module
- * takes string contents and assembles them by priority with token budgeting.
+ * Assembles reference material (voice tests, style guide, outlines,
+ * character sheets, wiki entries, series bible, themes) into a single
+ * AssembledContext object for an LLM revision call.
+ *
+ * Called by pipeline.ts. The Obsidian file-reading happens in commands.ts;
+ * this module takes pre-read string contents and assembles them by priority
+ * with token budgeting so the prompt stays within the provider's context
+ * window.
+ *
+ * Priority order (highest first):
+ *   1. Full chapter text (always included)
+ *   2. Voice test examples
+ *   3. Style guide
+ *   4. Book plot outline
+ *   5. Character sheets
+ *   6. Wiki/lore entries
+ *   7. Series bible
+ *   8. Themes
+ *
+ * Lower-priority items are dropped if the token budget is exceeded.
+ *
  * Pure function -- no Obsidian API dependencies.
  */
 
 import type { AnnotatedSection, AssembledContext, PennySettings } from "./types";
 
 /**
- * Files provided to the context assembler.
- * All fields are string contents (already read from the vault).
+ * Pre-read file contents provided to the context assembler.
+ * All fields are raw string contents (already read from the vault by commands.ts).
+ * Optional fields are omitted when the corresponding setting path is empty.
  */
 export interface ContextFiles {
   chapter: string;
@@ -42,8 +61,14 @@ export function estimateTokens(text: string, multiplier = 1.33): number {
  *
  * The voice tests file is expected to have sections headed by character names
  * (e.g. `## Tim`, `## Darin`). If any detected character name appears in a
- * heading, that section is included. If no match, the full file is returned
- * (up to a reasonable limit).
+ * heading, only those matching sections are included. If no match, the full
+ * file is returned so the LLM still has voice reference material.
+ *
+ * Called by commands.ts before assembleContext() to pre-filter voice tests.
+ *
+ * @param voiceTestsContent - Full content of the voice tests file
+ * @param characters        - Lowercased character names detected in the scene
+ * @returns Filtered voice test content (matching sections only, or full file if no match)
  */
 export function selectVoiceTestSection(
   voiceTestsContent: string,
@@ -112,7 +137,7 @@ export function selectVoiceTestSection(
  */
 export function assembleContext(
   files: ContextFiles,
-  annotation: AnnotatedSection,
+  _annotation: AnnotatedSection,
   settings: PennySettings,
   tokenMultiplier = 1.33,
 ): AssembledContext {

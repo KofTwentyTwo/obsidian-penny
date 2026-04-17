@@ -21,7 +21,6 @@ import {
   type AnnotatedSection,
   type AnnotationTag,
   ACTIONABLE_TAGS,
-  PASSTHROUGH_TAGS,
   ALL_TAGS,
 } from "./types";
 

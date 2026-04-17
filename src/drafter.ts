@@ -1,19 +1,32 @@
 /**
  * PENNY - Prompt Construction & Provider Dispatch
  *
- * Build the system and user prompts from assembled context and an annotation.
- * Dispatch completion requests to the active LLM provider.
- * Pure functions -- no Obsidian API dependencies (except callProvider which
- * accepts the provider as a parameter).
+ * Builds the system prompt (from the template + assembled context) and the
+ * user prompt (the focused task for a single annotation), then dispatches
+ * the completion request to an LLM provider.
+ *
+ * Called by pipeline.ts once per actionable annotation.
+ *
+ * System prompt construction:
+ * - Replaces {placeholder} tokens in the template with context values
+ * - Removes entire sections (heading + placeholder) when context is empty
+ * - Cleans up double blank lines left by section removal
+ *
+ * User prompt construction:
+ * - Contains the passage to revise, the author's instruction, and a
+ *   directive to output only the replacement text
+ *
+ * Pure functions -- no Obsidian API dependencies (callProvider accepts
+ * the provider as a parameter via dependency injection).
  */
 
 import type { AssembledContext, AnnotatedSection } from "./types";
 import type { CompletionRequest, CompletionResponse } from "./providers/service";
 
 /**
- * All placeholders that can appear in the system prompt template.
- * Each maps to either a field on AssembledContext or a field on
- * AnnotatedSection.
+ * Registry of all {placeholder} tokens recognized in the system prompt template.
+ * Each entry maps a placeholder string to its display label (used for section
+ * heading matching during removal) and its corresponding AssembledContext field.
  */
 const SECTION_PLACEHOLDERS: Record<string, { label: string; contextKey?: keyof AssembledContext }> = {
   "{voice_rules}": { label: "CRITICAL VOICE RULES", contextKey: "voiceRules" },
@@ -117,7 +130,7 @@ export async function callProvider(
   return provider.complete(request);
 }
 
-/** Escape special regex characters in a string. */
+/** Escape special regex characters in a string so it can be used in a RegExp constructor. */
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

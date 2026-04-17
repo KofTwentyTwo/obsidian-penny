@@ -1,10 +1,23 @@
 /**
  * PENNY - Core Processing Pipeline (pure logic)
  *
+ * Orchestrates the full annotation-processing workflow for a single chapter:
+ *   1. Parse annotations from the chapter markdown
+ *   2. Filter to only new (unprocessed) actionable annotations
+ *   3. For each annotation: assemble context, build prompt, call the LLM
+ *   4. Assemble the new chapter version from all revisions
+ *   5. Update frontmatter with agent-managed fields
+ *   6. Update version state for idempotency
+ *   7. Run voice compliance checks
+ *   8. Generate review notes and activity log entries
+ *
  * Extracted from commands.ts for testability. This module has NO Obsidian
- * dependencies. It takes pre-read content and an injected provider lookup,
- * runs the full annotation processing pipeline, and returns results that
- * the command layer writes back to the vault.
+ * dependencies. It takes pre-read content and an injected provider lookup
+ * (dependency injection), runs the pipeline, and returns results that
+ * commands.ts writes back to the vault.
+ *
+ * Supports cancellation via the isCancelled callback and emits real-time
+ * progress events for the progress modal UI.
  */
 
 import type { AnnotatedSection, AnnotationChange, ReviewFlag, PennySettings } from "./types";
@@ -25,7 +38,9 @@ import { getRoute } from "./providers/router";
 
 /**
  * A minimal provider interface for the pipeline. Matches the subset of
- * LLMService that the pipeline actually uses.
+ * LLMService that the pipeline actually uses (complete() + optional
+ * tokenMultiplier). This keeps the pipeline decoupled from the full
+ * provider implementation.
  */
 export interface PipelineProvider {
   complete(request: CompletionRequest): Promise<CompletionResponse>;
@@ -33,7 +48,7 @@ export interface PipelineProvider {
   tokenMultiplier?: number;
 }
 
-/** Progress events emitted during pipeline execution. */
+/** Progress events emitted during pipeline execution. Consumed by PennyProgressModal. */
 export interface ProgressEvent {
   type: "start" | "annotation-start" | "annotation-done" | "annotation-error" | "assembling" | "complete";
   total?: number;
@@ -47,21 +62,32 @@ export interface ProgressEvent {
   message?: string;
 }
 
+/**
+ * Everything the pipeline needs to process a chapter.
+ * All file content is pre-read by commands.ts; the pipeline never touches the vault.
+ */
 export interface PipelineInput {
+  /** Full markdown content of the chapter file. */
   content: string;
+  /** Raw text from the `.version` file (may be empty for new chapters). */
   versionContent: string;
+  /** Raw JSON from the `.state.json` file (may be empty for new chapters). */
   stateContent: string;
+  /** Pre-read context files (voice tests, style guide, outlines, etc.). */
   contextFiles: ContextFiles;
+  /** Plugin settings (possibly with per-project overrides merged in). */
   settings: PennySettings;
+  /** Chapter identifier (e.g. "ch-05"). */
   chapterId: string;
+  /** Book identifier (e.g. "book-1"). */
   bookId: string;
-  /** Provider lookup: given a provider name, returns an object with a complete() method, or undefined */
+  /** Provider lookup: given a provider name, returns an object with a complete() method, or undefined. */
   getProvider: (name: string) => PipelineProvider | undefined;
-  /** Optional callback for real-time progress updates. */
+  /** Optional callback for real-time progress updates (drives the progress modal). */
   onProgress?: (event: ProgressEvent) => void;
   /** Optional cancellation check; return true to abort the pipeline loop. */
   isCancelled?: () => boolean;
-  /** Pre-parsed annotations to avoid redundant parseAnnotations call. */
+  /** Pre-parsed annotations to avoid redundant parseAnnotations call (optimization). */
   preParsedAnnotations?: AnnotatedSection[];
 }
 

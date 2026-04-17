@@ -228,8 +228,14 @@ export function updateAgentFields(
 /**
  * Count prose words in the chapter body.
  *
- * Only counts text after the `proseMarker` comment.  If the marker is not
- * found, counts all words in the body.
+ * Only counts text after the `proseMarker` comment (e.g. `<!-- Prose begins below -->`).
+ * If the marker is not found, counts all words in the body.
+ * Strips markdown comments (%% ... %%), HTML comments (<!-- ... -->),
+ * and heading markers before counting.
+ *
+ * @param content     - Full chapter content (with frontmatter)
+ * @param proseMarker - The HTML comment that marks the start of prose
+ * @returns Word count of the prose section
  */
 export function countProseWords(content: string, proseMarker: string): number {
   let text = content;
@@ -256,11 +262,17 @@ export function countProseWords(content: string, proseMarker: string): number {
 /**
  * Detect characters mentioned in the chapter.
  *
- * 1. Parse the `focus` frontmatter field (comma-separated names).
+ * Two detection strategies:
+ * 1. Parse the `focus` frontmatter field (comma/plus/ampersand-separated names).
  * 2. Scan dialogue for attribution patterns like `NAME said`, `said NAME`,
  *    `NAME asked`, etc.
  *
- * Returns a deduplicated, lowercased array of character identifiers.
+ * Used by the pipeline to select relevant voice test sections and
+ * character sheets for the LLM context.
+ *
+ * @param content    - Full chapter content to scan for dialogue attributions
+ * @param focusField - Value of the `focus` frontmatter field (may be empty)
+ * @returns Deduplicated, lowercased array of character identifiers
  */
 export function detectCharacters(content: string, focusField: string): string[] {
   const chars = new Set<string>();

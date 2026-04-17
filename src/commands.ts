@@ -56,8 +56,9 @@ export function registerCommands(plugin: PennyPlugin): void {
       if (!file || !isChapterFile(file, plugin)) return false;
       if (checking) return true;
 
-      if (!requireProvider(plugin)) return;
+      if (!requireProvider(plugin)) return false;
       processChapter(plugin, file);
+      return true;
     },
   });
 
@@ -109,6 +110,7 @@ export function registerCommands(plugin: PennyPlugin): void {
       if (checking) return true;
 
       dryRun(plugin, file);
+      return true;
     },
   });
 
@@ -131,6 +133,7 @@ export function registerCommands(plugin: PennyPlugin): void {
       if (checking) return true;
 
       showStatus(plugin, file);
+      return true;
     },
   });
 
