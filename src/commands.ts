@@ -604,14 +604,15 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     await upsertFile(plugin, reviewPath, result.reviewContent);
 
     // Append to activity log (logPath pre-computed above)
+    // Uses adapter for dotfolder (.penny-log) that vault cache can't see
     const logFolder = logPath.split("/").slice(0, -1).join("/");
     await ensureFolder(plugin, logFolder);
-    const existingLog = plugin.app.vault.getAbstractFileByPath(logPath);
-    if (existingLog && existingLog instanceof TFile) {
-      const existing = await plugin.app.vault.read(existingLog);
-      await plugin.app.vault.modify(existingLog, existing + result.logLine);
+    const logExists = await plugin.app.vault.adapter.exists(logPath);
+    if (logExists) {
+      const existing = await plugin.app.vault.adapter.read(logPath);
+      await plugin.app.vault.adapter.write(logPath, existing + result.logLine);
     } else {
-      await safeCreateFile(plugin, logPath, result.logLine);
+      await plugin.app.vault.adapter.write(logPath, result.logLine);
     }
 
     pennyLog("info", s.logLevel, `Version ${result.newVersion} created for ${chapterId}`);
