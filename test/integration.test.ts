@@ -349,14 +349,8 @@ Some prose without any annotations.
 
     const result = await runPipeline(input);
 
-    expect(result).not.toBeNull();
-    const r = result as PipelineResult;
-
-    expect(r.hadErrors).toBe(true);
-    expect(r.newContent).toContain("AGENT-ERROR");
-    expect(r.newContent).toContain("not available");
-    // No annotations should be counted as successfully processed
-    expect(r.annotationsProcessed).toBe(0);
+    // When all annotations fail, pipeline returns null (no version created)
+    expect(result).toBeNull();
   });
 
   it("updates frontmatter with agent fields", async () => {

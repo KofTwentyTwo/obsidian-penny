@@ -82,7 +82,16 @@ export class OpenAIProvider implements LLMService {
     }
 
     if (request.onToken && typeof globalThis.fetch === "function") {
-      return this.completeStreaming(request, apiKey);
+      try {
+        return await this.completeStreaming(request, apiKey);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("CSP")) {
+          // Fall through to non-streaming
+        } else {
+          throw e;
+        }
+      }
     }
 
     const body: Record<string, unknown> = {

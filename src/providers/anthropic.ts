@@ -85,9 +85,19 @@ export class AnthropicProvider implements LLMService {
       throw new Error("Anthropic API key is required");
     }
 
-    // When onToken is provided and fetch is available, use streaming
+    // Try streaming when onToken is provided. Fall back to non-streaming
+    // if fetch fails (e.g., Obsidian's Electron CSP blocks native fetch).
     if (request.onToken && typeof globalThis.fetch === "function") {
-      return this.completeStreaming(request, apiKey);
+      try {
+        return await this.completeStreaming(request, apiKey);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("CSP")) {
+          // Fall through to non-streaming path
+        } else {
+          throw e; // Real API error -- propagate
+        }
+      }
     }
 
     const body: Record<string, unknown> = {

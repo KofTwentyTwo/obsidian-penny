@@ -344,6 +344,17 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
     return null; // Don't create a version from a cancelled run
   }
 
+  // Don't create a version if no annotations were successfully processed
+  if (completedCount === 0) {
+    onProgress?.({
+      type: "complete",
+      message: hadErrors
+        ? `All ${toProcess.length} annotation(s) failed. No version created.`
+        : `No annotations processed. No version created.`,
+    });
+    return null;
+  }
+
   // (f) Assemble new version
   const newVer = nextVersion(currentVersion);
 
