@@ -544,8 +544,7 @@ She walked in.
     expect(result).toBeNull();
   });
 
-  it("emits a complete event with Cancelled message when cancelled mid-run", async () => {
-    let callCount = 0;
+  it("emits a cancelled event with Cancelled message when cancelled mid-run", async () => {
     const progressEvents: Array<{ type: string; message?: string }> = [];
     const mock = createMockProvider([
       "Revised first passage.",
@@ -575,10 +574,14 @@ She walked in.
     // Should return null
     expect(result).toBeNull();
 
-    // Should have emitted a complete event with "Cancelled" in the message
+    // Should have emitted a "cancelled" event (distinct from "complete")
+    const cancelledEvents = progressEvents.filter((e) => e.type === "cancelled");
+    expect(cancelledEvents.length).toBeGreaterThanOrEqual(1);
+    expect(cancelledEvents.some((e) => e.message?.includes("Cancelled"))).toBe(true);
+
+    // And should NOT have emitted a "complete" event -- a cancelled run is not complete
     const completeEvents = progressEvents.filter((e) => e.type === "complete");
-    expect(completeEvents.length).toBeGreaterThanOrEqual(1);
-    expect(completeEvents.some((e) => e.message?.includes("Cancelled"))).toBe(true);
+    expect(completeEvents.length).toBe(0);
   });
 
   it("produces valid file outputs for upsert on first run (create path)", async () => {

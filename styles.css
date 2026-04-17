@@ -385,9 +385,18 @@
   color: var(--text-muted);
 }
 
-/* Progress modal */
+/* Progress modal.
+   Size rule lives on the OUTER wrapper (`.penny-progress-modal-wrapper`,
+   applied to Obsidian's `this.modalEl`) because `min-width` on the inner
+   contentEl doesn't reliably force the whole modal to grow. `max-width`
+   keeps it sane on narrow vault layouts. */
+.penny-progress-modal-wrapper {
+  width: 760px;
+  max-width: 92vw;
+}
+
 .penny-progress-modal {
-  min-width: 500px;
+  width: 100%;
 }
 
 .penny-progress-header-row {
@@ -402,6 +411,9 @@
 .penny-progress-header {
   font-weight: 600;
   font-size: 1.1em;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .penny-progress-timer {
@@ -409,6 +421,9 @@
   font-size: 0.9em;
   color: var(--text-accent);
   font-weight: 500;
+  flex: 0 0 auto;
+  margin-left: 12px;
+  white-space: nowrap;
 }
 
 .penny-inline-spinner {
@@ -428,9 +443,10 @@
   font-style: italic;
 }
 
+/* Outer log container. Intentionally does NOT scroll -- we want the spinner
+   line AND the stream preview's top to stay visible. The stream preview
+   itself has `overflow-y: auto` for token-level scrolling. */
 .penny-progress-log {
-  max-height: 300px;
-  overflow-y: auto;
   font-family: var(--font-monospace);
   font-size: 0.85em;
   margin-bottom: 12px;
@@ -460,9 +476,13 @@
   color: var(--text-error, #e74c3c);
 }
 
-/* Streaming preview -- live LLM output */
+/* Streaming preview -- live LLM output.
+   Uses `height` (not `max-height`) so the box reserves its full size from the
+   moment it appears. This prevents the modal from jumping around as tokens
+   arrive, and gives the user a stable reading area. Auto-scroll (JS side)
+   keeps the newest tokens visible at the bottom. */
 .penny-stream-preview {
-  max-height: 200px;
+  height: 320px;
   overflow-y: auto;
   padding: 8px 12px;
   margin: 4px 0 8px 0;
@@ -526,6 +546,44 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* "While you wait..." quote panel
+   Visible during active processing, hidden in terminal states (controlled by
+   inline style set in progress-modal.ts render()). Intentionally quiet --
+   should feel like atmosphere, not UI demanding attention. */
+.penny-quote-panel {
+  margin: 12px 0;
+  padding: 14px 18px;
+  background: var(--background-secondary);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 4px;
+  font-style: italic;
+  color: var(--text-muted);
+  transition: opacity 400ms ease;
+}
+
+.penny-quote-panel-label {
+  font-size: 0.72em;
+  font-style: normal;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+.penny-quote-text {
+  font-size: 0.95em;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.penny-quote-author {
+  font-size: 0.8em;
+  font-style: normal;
+  text-align: right;
+  color: var(--text-faint);
 }
 
 /* File conflict modal */

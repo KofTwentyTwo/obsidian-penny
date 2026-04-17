@@ -50,7 +50,15 @@ export interface PipelineProvider {
 
 /** Progress events emitted during pipeline execution. Consumed by PennyProgressModal. */
 export interface ProgressEvent {
-  type: "start" | "annotation-start" | "annotation-done" | "annotation-error" | "assembling" | "complete" | "token";
+  type:
+    | "start"
+    | "annotation-start"
+    | "annotation-done"
+    | "annotation-error"
+    | "assembling"
+    | "complete"
+    | "cancelled"
+    | "token";
   total?: number;
   current?: number;
   tag?: string;
@@ -89,6 +97,12 @@ export interface PipelineInput {
   onProgress?: (event: ProgressEvent) => void;
   /** Optional cancellation check; return true to abort the pipeline loop. */
   isCancelled?: () => boolean;
+  /**
+   * Optional AbortSignal. When aborted, the in-flight provider call is torn
+   * down immediately (not just between annotations), and the pipeline emits
+   * a "cancelled" event and resolves with null.
+   */
+  signal?: AbortSignal;
   /** Pre-parsed annotations to avoid redundant parseAnnotations call (optimization). */
   preParsedAnnotations?: AnnotatedSection[];
 }
@@ -193,14 +207,21 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
   let hadErrors = false;
   let completedCount = 0;
 
+  // Unified cancellation check: either the legacy isCancelled callback OR
+  // an AbortSignal being aborted counts as "cancel requested".
+  const isCancelled = (): boolean =>
+    (input.isCancelled?.() ?? false) || (input.signal?.aborted ?? false);
+
   for (let i = 0; i < toProcess.length; i++) {
     // Check for cancellation before each annotation
-    if (input.isCancelled?.()) {
+    if (isCancelled()) {
       onProgress?.({
-        type: "complete",
+        type: "cancelled",
+        current: completedCount,
+        total: toProcess.length,
         message: `Cancelled. Processed ${completedCount} of ${toProcess.length} annotation${toProcess.length === 1 ? "" : "s"}.`,
       });
-      break;
+      return null;
     }
 
     const annotation = toProcess[i];
@@ -277,6 +298,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
               : undefined,
         endpoint: route.provider === "ollama" ? settings.ollamaEndpoint : undefined,
         useThinking,
+        signal: input.signal,
         onToken: onProgress ? (text: string) => {
           onProgress({ type: "token", text, current: i + 1 });
         } : undefined,
@@ -318,6 +340,18 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         message: `[${i + 1}/${toProcess.length}] ${annotation.tag} line ${annotation.lineStart} ... done (${revisedWords} words)`,
       });
     } catch (err) {
+      // AbortError means the user cancelled -- don't treat it as an API failure,
+      // don't insert an error marker, don't create a version. Just stop.
+      if (err instanceof Error && err.name === "AbortError") {
+        onProgress?.({
+          type: "cancelled",
+          current: completedCount,
+          total: toProcess.length,
+          message: `Cancelled during [${i + 1}/${toProcess.length}] ${annotation.tag}. Processed ${completedCount}.`,
+        });
+        return null;
+      }
+
       const errMsg = err instanceof Error ? err.message : String(err);
       const errorText = `%% AGENT-ERROR(${annotation.tag}): ${errMsg} %%\n${annotation.originalText}`;
       revisions.push({ annotation, revisedText: errorText });
@@ -340,8 +374,14 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
   }
 
   // Check if cancelled before proceeding to assembly
-  if (input.isCancelled?.()) {
-    return null; // Don't create a version from a cancelled run
+  if (isCancelled()) {
+    onProgress?.({
+      type: "cancelled",
+      current: completedCount,
+      total: toProcess.length,
+      message: `Cancelled. Processed ${completedCount} of ${toProcess.length}.`,
+    });
+    return null;
   }
 
   // Don't create a version if no annotations were successfully processed

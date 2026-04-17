@@ -28,6 +28,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
+import { streamRequest } from "./node-stream";
 
 const DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434";
 
@@ -99,16 +100,17 @@ export class OllamaProvider implements LLMService {
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     const endpoint = request.endpoint ?? DEFAULT_OLLAMA_ENDPOINT;
 
+    // Stream via Node http/https (streamRequest) when onToken is set. AbortError
+    // and API errors must propagate; connection-refused and other transport
+    // failures fall through to the non-streaming httpFn path as a safety net.
     if (request.onToken && typeof globalThis.fetch === "function") {
       try {
         return await this.completeStreaming(request, endpoint);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("CSP") || msg.includes("ECONNREFUSED")) {
-          // Fall through to non-streaming
-        } else {
-          throw e;
-        }
+        if (e instanceof Error && e.name === "AbortError") throw e;
+        if (e instanceof Error && e.message.startsWith("Ollama error")) throw e;
+        // Transport-level failure (ECONNREFUSED, etc.) -- fall through to httpFn,
+        // which will produce the usual "Is Ollama running?" diagnostic.
       }
     }
 
@@ -171,44 +173,38 @@ export class OllamaProvider implements LLMService {
       headers["Authorization"] = `Bearer ${request.apiKey}`;
     }
 
-    const resp = await fetch(`${endpoint}/v1/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
-
-    if (!resp.ok) {
-      throw this.buildHttpError(resp.status, await resp.text(), endpoint);
-    }
-
-    const reader = resp.body?.getReader();
-    if (!reader) throw new Error("Streaming not supported");
-
-    const decoder = new TextDecoder();
     let buffer = "";
     const textParts: string[] = [];
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    const result = await streamRequest({
+      url: `${endpoint}/v1/chat/completions`,
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: request.signal,
+      onChunk: (chunk: string) => {
+        buffer += chunk;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+          try {
+            const event = JSON.parse(data);
+            const delta = event.choices?.[0]?.delta?.content;
+            if (typeof delta === "string") {
+              textParts.push(delta);
+              request.onToken?.(delta);
+            }
+          } catch { /* skip */ }
+        }
+      },
+    });
 
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") continue;
-        try {
-          const event = JSON.parse(data);
-          const delta = event.choices?.[0]?.delta?.content;
-          if (typeof delta === "string") {
-            textParts.push(delta);
-            request.onToken?.(delta);
-          }
-        } catch { /* skip */ }
-      }
+    if (result.status < 200 || result.status >= 300) {
+      throw this.buildHttpError(result.status, result.fullText, endpoint);
     }
 
     return {

@@ -21,6 +21,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
+import { streamRequest } from "./node-stream";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
@@ -81,16 +82,15 @@ export class OpenAIProvider implements LLMService {
       throw new Error("OpenAI API key is required");
     }
 
+    // Stream via Node https (streamRequest) when onToken is set. AbortError
+    // and API errors must propagate; only true transport failures fall back.
     if (request.onToken && typeof globalThis.fetch === "function") {
       try {
         return await this.completeStreaming(request, apiKey);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("CSP")) {
-          // Fall through to non-streaming
-        } else {
-          throw e;
-        }
+        if (e instanceof Error && e.name === "AbortError") throw e;
+        if (e instanceof Error && e.message.startsWith("OpenAI API error")) throw e;
+        // Transport-level failure -- fall through to httpFn.
       }
     }
 
@@ -134,44 +134,38 @@ export class OpenAIProvider implements LLMService {
       stream: true,
     };
 
-    const resp = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!resp.ok) {
-      throw this.buildHttpError(resp.status, await resp.text());
-    }
-
-    const reader = resp.body?.getReader();
-    if (!reader) throw new Error("Streaming not supported");
-
-    const decoder = new TextDecoder();
     let buffer = "";
     const textParts: string[] = [];
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    const result = await streamRequest({
+      url: OPENAI_API_URL,
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: request.signal,
+      onChunk: (chunk: string) => {
+        buffer += chunk;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+          try {
+            const event = JSON.parse(data);
+            const delta = event.choices?.[0]?.delta?.content;
+            if (typeof delta === "string") {
+              textParts.push(delta);
+              request.onToken?.(delta);
+            }
+          } catch { /* skip */ }
+        }
+      },
+    });
 
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") continue;
-        try {
-          const event = JSON.parse(data);
-          const delta = event.choices?.[0]?.delta?.content;
-          if (typeof delta === "string") {
-            textParts.push(delta);
-            request.onToken?.(delta);
-          }
-        } catch { /* skip */ }
-      }
+    if (result.status < 200 || result.status >= 300) {
+      throw this.buildHttpError(result.status, result.fullText);
     }
 
     return {

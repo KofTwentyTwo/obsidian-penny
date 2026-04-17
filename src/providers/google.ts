@@ -21,6 +21,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
+import { streamRequest } from "./node-stream";
 
 const GOOGLE_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -70,16 +71,15 @@ export class GoogleProvider implements LLMService {
       throw new Error("Google API key is required");
     }
 
+    // Stream via Node https (streamRequest) when onToken is set. AbortError
+    // and API errors must propagate; only true transport failures fall back.
     if (request.onToken && typeof globalThis.fetch === "function") {
       try {
         return await this.completeStreaming(request, apiKey);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("CSP")) {
-          // Fall through to non-streaming
-        } else {
-          throw e;
-        }
+        if (e instanceof Error && e.name === "AbortError") throw e;
+        if (e instanceof Error && e.message.startsWith("Google API error")) throw e;
+        // Transport-level failure -- fall through to httpFn.
       }
     }
 
@@ -134,47 +134,41 @@ export class GoogleProvider implements LLMService {
     // Google uses streamGenerateContent with alt=sse for SSE streaming
     const url = `${GOOGLE_API_BASE}/${request.model}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!resp.ok) {
-      throw this.buildHttpError(resp.status, await resp.text());
-    }
-
-    const reader = resp.body?.getReader();
-    if (!reader) throw new Error("Streaming not supported");
-
-    const decoder = new TextDecoder();
     let buffer = "";
     const textParts: string[] = [];
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    const result = await streamRequest({
+      url,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: request.signal,
+      onChunk: (chunk: string) => {
+        buffer += chunk;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        try {
-          const event = JSON.parse(data);
-          const parts = event.candidates?.[0]?.content?.parts;
-          if (Array.isArray(parts)) {
-            for (const part of parts) {
-              if (typeof part.text === "string") {
-                textParts.push(part.text);
-                request.onToken?.(part.text);
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          try {
+            const event = JSON.parse(data);
+            const parts = event.candidates?.[0]?.content?.parts;
+            if (Array.isArray(parts)) {
+              for (const part of parts) {
+                if (typeof part.text === "string") {
+                  textParts.push(part.text);
+                  request.onToken?.(part.text);
+                }
               }
             }
-          }
-        } catch { /* skip */ }
-      }
+          } catch { /* skip */ }
+        }
+      },
+    });
+
+    if (result.status < 200 || result.status >= 300) {
+      throw this.buildHttpError(result.status, result.fullText);
     }
 
     return {

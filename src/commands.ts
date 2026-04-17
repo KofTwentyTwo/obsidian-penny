@@ -538,9 +538,20 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       createdPaths.push(p);
     }
 
+    // AbortController drives real in-flight cancellation. The modal calls
+    // controller.abort() when the user clicks Cancel; the pipeline forwards
+    // the signal to the provider, which tears down any active streaming
+    // request via req.destroy(). The old isCancelled() callback is retained
+    // as a secondary check -- the pipeline's isCancelled() helper treats
+    // either source as cancellation.
+    const abortController = new AbortController();
+
     // Create and open the progress modal (unless running silently or disabled in settings)
     if (!options?.silent && s.showProgressModal) {
-      modal = new PennyProgressModal(plugin.app, `Processing ${chapterId}`, s.showStatusNotices);
+      modal = new PennyProgressModal(plugin.app, `Processing ${chapterId}`, {
+        showStatusNotices: s.showStatusNotices,
+        onAbort: () => abortController.abort(),
+      });
       modal.open();
     }
 
@@ -560,12 +571,20 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       },
       onProgress: (event) => modal?.update(event),
       isCancelled: () => modal?.isCancelled() ?? false,
+      signal: abortController.signal,
     });
 
     if (!result) {
-      if (modal) modal.close();
+      // If the user cancelled, the modal is already in the "cancelled"
+      // terminal state with a Close button; leave it open so the user sees
+      // the final state and dismisses it themselves. If there were simply no
+      // annotations to process, no event was emitted and the modal is still
+      // in the "starting" state -- close it automatically.
+      const wasCancelled = modal?.isCancelled() ?? false;
+      if (modal && !wasCancelled) {
+        modal.close();
+      }
       if (!options?.silent) {
-        const wasCancelled = modal?.isCancelled();
         new Notice(wasCancelled
           ? `PENNY: Processing of ${file.basename} was cancelled.`
           : `PENNY: No new annotations to process in ${file.basename}.`

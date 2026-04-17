@@ -79,6 +79,12 @@ export interface CompletionRequest {
   useThinking?: boolean;
   /** Called with each text chunk during streaming. When set, provider should use streaming API. */
   onToken?: (text: string) => void;
+  /**
+   * Optional cancellation signal. When aborted, the provider tears down any
+   * in-flight streaming request (req.destroy()) and rejects with an
+   * `AbortError` (err.name === "AbortError").
+   */
+  signal?: AbortSignal;
 }
 
 /** Response from an LLM provider. The `text` field contains the revised prose. */

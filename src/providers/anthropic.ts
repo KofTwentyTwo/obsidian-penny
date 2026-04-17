@@ -24,6 +24,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
+import { streamRequest } from "./node-stream";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -85,18 +86,22 @@ export class AnthropicProvider implements LLMService {
       throw new Error("Anthropic API key is required");
     }
 
-    // Try streaming when onToken is provided. Fall back to non-streaming
-    // if fetch fails (e.g., Obsidian's Electron CSP blocks native fetch).
+    // Try streaming when onToken is provided. Uses Node's https module under
+    // the hood (streamRequest) which bypasses Obsidian's Electron CSP entirely.
+    // The globalThis.fetch guard is kept as a "is this a web-capable env"
+    // signal and to let tests opt out of the streaming path.
+    //
+    // AbortError from a cancelled stream MUST propagate -- it's not a
+    // transport failure, it's the user clicking Cancel. Genuine API errors
+    // (401/429/etc) also propagate. Only true transport-unavailable errors
+    // fall through to the non-streaming httpFn path as a safety net.
     if (request.onToken && typeof globalThis.fetch === "function") {
       try {
         return await this.completeStreaming(request, apiKey);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("CSP")) {
-          // Fall through to non-streaming path
-        } else {
-          throw e; // Real API error -- propagate
-        }
+        if (e instanceof Error && e.name === "AbortError") throw e;
+        if (e instanceof Error && e.message.startsWith("Anthropic API error")) throw e;
+        // Transport-level failure (rare with Node https) -- fall through.
       }
     }
 
@@ -139,8 +144,9 @@ export class AnthropicProvider implements LLMService {
   }
 
   /**
-   * Streaming completion using native fetch + SSE parsing.
-   * Calls request.onToken with each text delta as it arrives.
+   * Streaming completion using Node's https module (via streamRequest) + SSE parsing.
+   * Calls request.onToken with each text delta as it arrives. Supports
+   * cancellation via request.signal.
    */
   private async completeStreaming(
     request: CompletionRequest,
@@ -170,64 +176,57 @@ export class AnthropicProvider implements LLMService {
       headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
     }
 
-    const resp = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw this.buildHttpError(resp.status, errText);
-    }
-
-    const reader = resp.body?.getReader();
-    if (!reader) throw new Error("Streaming not supported");
-
-    const decoder = new TextDecoder();
     let buffer = "";
     const textParts: string[] = [];
     let inputTokens = 0;
     let outputTokens = 0;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    const result = await streamRequest({
+      url: ANTHROPIC_API_URL,
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: request.signal,
+      onChunk: (chunk: string) => {
+        buffer += chunk;
+        // Parse SSE lines from buffer; keep incomplete last line for next chunk
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
-      buffer += decoder.decode(value, { stream: true });
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
 
-      // Parse SSE lines from buffer
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? ""; // Keep incomplete last line
+          try {
+            const event = JSON.parse(data);
 
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") continue;
+            // Text delta -- the main output
+            if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+              const text = event.delta.text;
+              textParts.push(text);
+              request.onToken?.(text);
+            }
 
-        try {
-          const event = JSON.parse(data);
+            // Usage from message_delta (final event)
+            if (event.type === "message_delta" && event.usage) {
+              outputTokens = event.usage.output_tokens ?? 0;
+            }
 
-          // Text delta -- the main output
-          if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
-            const text = event.delta.text;
-            textParts.push(text);
-            request.onToken?.(text);
+            // Usage from message_start
+            if (event.type === "message_start" && event.message?.usage) {
+              inputTokens = event.message.usage.input_tokens ?? 0;
+            }
+          } catch {
+            // Skip unparseable lines
           }
-
-          // Usage from message_delta (final event)
-          if (event.type === "message_delta" && event.usage) {
-            outputTokens = event.usage.output_tokens ?? 0;
-          }
-
-          // Usage from message_start
-          if (event.type === "message_start" && event.message?.usage) {
-            inputTokens = event.message.usage.input_tokens ?? 0;
-          }
-        } catch {
-          // Skip unparseable lines
         }
-      }
+      },
+    });
+
+    // streamRequest returns non-2xx as data (not an error); inspect status here.
+    if (result.status < 200 || result.status >= 300) {
+      throw this.buildHttpError(result.status, result.fullText);
     }
 
     return {
