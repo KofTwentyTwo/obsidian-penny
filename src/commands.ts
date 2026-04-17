@@ -592,21 +592,9 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       return null;
     }
 
-    // Update .version file
-    const versionFile = plugin.app.vault.getAbstractFileByPath(versionFilePath);
-    if (versionFile && versionFile instanceof TFile) {
-      await plugin.app.vault.modify(versionFile, String(result.newVersion));
-    } else {
-      await safeCreateFile(plugin, versionFilePath, String(result.newVersion));
-    }
-
-    // Update .state.json
-    const stateFile = plugin.app.vault.getAbstractFileByPath(stateFilePath);
-    if (stateFile && stateFile instanceof TFile) {
-      await plugin.app.vault.modify(stateFile, result.stateJson);
-    } else {
-      await safeCreateFile(plugin, stateFilePath, result.stateJson);
-    }
+    // Update .version and .state.json (upsert -- these always exist after first run)
+    await upsertFile(plugin, versionFilePath, String(result.newVersion));
+    await upsertFile(plugin, stateFilePath, result.stateJson);
 
     // Write review note (reviewPath pre-computed above)
     const reviewFolder = reviewPath.split("/").slice(0, -1).join("/");
@@ -810,11 +798,11 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
         }
 
         // Write .version manifest
-        await safeCreateFile(plugin, versionFilePath, "1");
+        await upsertFile(plugin, versionFilePath, "1");
 
         // Write .state.json
         const stateFilePath = `${chapterFolderPath}/.state.json`;
-        await safeCreateFile(plugin, stateFilePath, generateStateJson());
+        await upsertFile(plugin, stateFilePath, generateStateJson());
 
         // Remove original flat file only after verified write
         await plugin.app.vault.delete(bookChild);
