@@ -452,8 +452,8 @@
 }
 
 .penny-badge-installed {
-  background: var(--background-modifier-success, rgba(0, 200, 80, 0.15));
-  color: var(--text-success, #2ecc71);
+  background: var(--color-green, #2ecc71);
+  color: #fff;
 }
 
 .penny-badge-missing {
@@ -492,8 +492,8 @@
 .penny-companion-success {
   margin-top: 8px;
   padding: 6px 12px;
-  background: var(--background-modifier-success, rgba(0, 200, 80, 0.1));
-  color: var(--text-success, #2ecc71);
+  background: var(--color-green, #2ecc71);
+  color: #fff;
   border-radius: 6px;
   font-size: 0.85em;
   font-weight: 500;
