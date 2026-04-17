@@ -251,6 +251,62 @@ describe("GoogleProvider", () => {
     });
   });
 
+  describe("streaming fallback", () => {
+    it("uses httpFn path when onToken is NOT provided", async () => {
+      const responseText = googleResponse("Non-streaming result.");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new GoogleProvider(fn);
+
+      const result = await provider.complete(makeRequest());
+
+      expect(calls).toHaveLength(1);
+      expect(result.text).toBe("Non-streaming result.");
+      expect(result.provider).toBe("google");
+    });
+
+    it("falls back to httpFn when onToken is set but globalThis.fetch is unavailable", async () => {
+      const originalFetch = globalThis.fetch;
+      try {
+        // @ts-expect-error -- deliberately removing fetch to test fallback
+        globalThis.fetch = undefined;
+
+        const responseText = googleResponse("Fallback result.");
+        const { fn, calls } = mockHttp({ text: responseText });
+        const provider = new GoogleProvider(fn);
+
+        const tokens: string[] = [];
+        const result = await provider.complete(
+          makeRequest({ onToken: (t) => tokens.push(t) }),
+        );
+
+        expect(calls).toHaveLength(1);
+        expect(result.text).toBe("Fallback result.");
+        expect(tokens).toHaveLength(0);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("accepts onToken in the request interface without errors", async () => {
+      const originalFetch = globalThis.fetch;
+      try {
+        // @ts-expect-error -- deliberately removing fetch to test fallback
+        globalThis.fetch = undefined;
+
+        const responseText = googleResponse("OK");
+        const { fn } = mockHttp({ text: responseText });
+        const provider = new GoogleProvider(fn);
+
+        const result = await provider.complete(
+          makeRequest({ onToken: () => {} }),
+        );
+        expect(result.text).toBe("OK");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
   describe("estimateTokens", () => {
     it("estimates tokens as words * 1.0", () => {
       const { fn } = mockHttp();

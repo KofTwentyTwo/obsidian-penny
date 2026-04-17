@@ -430,5 +430,80 @@ describe("parseAnnotations", () => {
       expect(result[1].scope).toBe("block");
       expect(result[1].originalText).toBe("Second block.");
     });
+
+    it("handles empty block ({{ }} with no content between them)", () => {
+      const content = [
+        "{{",
+        "}}",
+        "%% REWRITE: fill this in %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(1);
+      expect(result[0].scope).toBe("block");
+      // lineStart > lineEnd when block is empty (open+1 > close-1)
+      // originalText should be empty since there is nothing between {{ and }}
+      expect(result[0].originalText).toBe("");
+    });
+
+    it("finds nearest matching {{ for nested-looking markers", () => {
+      // When there are two {{ before a }}, the parser walks backwards
+      // and finds the first {{ it encounters (nearest to the }}).
+      const content = [
+        "{{",
+        "Outer block start.",
+        "{{",
+        "Inner block content.",
+        "}}",
+        "%% REWRITE: rewrite inner %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(1);
+      expect(result[0].scope).toBe("block");
+      // Should find the nearest {{ (line 2) as the match for }} (line 4)
+      expect(result[0].originalText).toContain("Inner block content.");
+    });
+
+    it("does NOT treat {{ as block open when mixed with other text on same line", () => {
+      // isBlockOpen requires the line to be exactly "{{" (with optional whitespace)
+      const content = [
+        "She said {{ something }}",
+        "%% REWRITE: fix this line %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(1);
+      // {{ on a line with other text is not treated as a block opener,
+      // so scope resolution falls through to paragraph
+      expect(result[0].scope).toBe("paragraph");
+    });
+
+    it("second annotation after a block does not get block scope", () => {
+      // After a {{ }} block and its annotation, a subsequent annotation
+      // separated by other content should NOT resolve to block scope.
+      const content = [
+        "{{",
+        "Block content here.",
+        "}}",
+        "%% REWRITE: rewrite the block %%",
+        "",
+        "Some unrelated paragraph.",
+        "%% TONE: make it darker %%",
+      ].join("\n");
+
+      const result = parseAnnotations(content);
+      expect(result).toHaveLength(2);
+      // Find each annotation by tag since sort order depends on lineStart
+      const rewrite = result.find((a) => a.tag === "REWRITE");
+      const tone = result.find((a) => a.tag === "TONE");
+      expect(rewrite).toBeDefined();
+      expect(tone).toBeDefined();
+      // REWRITE sits right after }}, so it gets block scope
+      expect(rewrite!.scope).toBe("block");
+      expect(rewrite!.originalText).toBe("Block content here.");
+      // TONE follows a normal paragraph, so it gets paragraph scope
+      expect(tone!.scope).toBe("paragraph");
+    });
   });
 });

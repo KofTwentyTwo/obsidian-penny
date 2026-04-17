@@ -380,6 +380,69 @@ describe("AnthropicProvider", () => {
     });
   });
 
+  describe("streaming fallback", () => {
+    it("uses httpFn path when onToken is NOT provided", async () => {
+      const responseText = anthropicResponse("Non-streaming result.");
+      const { fn, calls } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      const result = await provider.complete(makeRequest());
+
+      // Should use httpFn, not fetch
+      expect(calls).toHaveLength(1);
+      expect(result.text).toBe("Non-streaming result.");
+      expect(result.provider).toBe("anthropic");
+    });
+
+    it("falls back to httpFn when onToken is set but globalThis.fetch is unavailable", async () => {
+      // In the vitest environment, globalThis.fetch may or may not exist.
+      // Save and remove it to test the fallback path.
+      const originalFetch = globalThis.fetch;
+      try {
+        // @ts-expect-error -- deliberately removing fetch to test fallback
+        globalThis.fetch = undefined;
+
+        const responseText = anthropicResponse("Fallback result.");
+        const { fn, calls } = mockHttp({ text: responseText });
+        const provider = new AnthropicProvider(fn);
+
+        const tokens: string[] = [];
+        const result = await provider.complete(
+          makeRequest({ onToken: (t) => tokens.push(t) }),
+        );
+
+        // Should fall back to httpFn since fetch is not available
+        expect(calls).toHaveLength(1);
+        expect(result.text).toBe("Fallback result.");
+        // onToken should NOT have been called (non-streaming path)
+        expect(tokens).toHaveLength(0);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("accepts onToken in the request interface without errors", async () => {
+      // When fetch is unavailable, onToken is accepted but the httpFn path is used
+      const originalFetch = globalThis.fetch;
+      try {
+        // @ts-expect-error -- deliberately removing fetch to test fallback
+        globalThis.fetch = undefined;
+
+        const responseText = anthropicResponse("OK");
+        const { fn } = mockHttp({ text: responseText });
+        const provider = new AnthropicProvider(fn);
+
+        // Passing onToken should not cause any type or runtime error
+        const result = await provider.complete(
+          makeRequest({ onToken: () => {} }),
+        );
+        expect(result.text).toBe("OK");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
   describe("testConnection", () => {
     it("returns null on successful connection", async () => {
       const responseText = anthropicResponse("pong");

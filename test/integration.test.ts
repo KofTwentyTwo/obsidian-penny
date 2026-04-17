@@ -587,6 +587,104 @@ She walked in.
     expect(completeEvents.some((e) => e.message?.includes("Cancelled"))).toBe(true);
   });
 
+  it("produces valid file outputs for upsert on first run (create path)", async () => {
+    const mock = createMockProvider(["Revised passage for version file."]);
+
+    const simpleChapter = `---
+type: chapter
+book: 1
+chapter: 1
+---
+
+She walked in.
+%% REWRITE: Add detail %%
+`;
+
+    // First run: empty version and state content (files don't exist yet)
+    const input: PipelineInput = {
+      content: simpleChapter,
+      versionContent: "",
+      stateContent: "",
+      contextFiles: makeContextFiles(simpleChapter),
+      settings: TEST_SETTINGS,
+      chapterId: "ch-01",
+      bookId: "book-1",
+      getProvider: () => mock.provider,
+    };
+    const result = await runPipeline(input);
+
+    expect(result).not.toBeNull();
+    const r = result as PipelineResult;
+
+    // newVersion is a number that would be written to the .version file
+    expect(r.newVersion).toBe(1);
+
+    // stateJson is valid JSON that would be written to .state.json
+    const state = JSON.parse(r.stateJson);
+    expect(state.version).toBe(1);
+    expect(state.processedAnnotations).toHaveLength(1);
+    expect(state.lastProcessed).toBeDefined();
+
+    // newContent is the full chapter content that replaces the original
+    expect(r.newContent).toContain("REVISED(v1)");
+
+    // reviewContent is the markdown review note
+    expect(r.reviewContent.length).toBeGreaterThan(0);
+    expect(r.reviewContent).toContain("# ch-01 Review -- v1");
+  });
+
+  it("produces valid file outputs for upsert on subsequent run (modify path)", async () => {
+    const mock1 = createMockProvider(["First revision."]);
+
+    const simpleChapter = `---
+type: chapter
+book: 1
+chapter: 1
+---
+
+She walked in.
+%% REWRITE: Add detail %%
+`;
+
+    // First run to get state
+    const input1 = makePipelineInput(simpleChapter, "", "", mock1);
+    const result1 = await runPipeline(input1);
+    expect(result1).not.toBeNull();
+
+    // Now simulate a second run where the files already exist:
+    // The version file contains "1", the state file has the first run's state.
+    // Add a new annotation to the already-processed content.
+    const secondChapter = result1!.newContent + "\n\nNew paragraph.\n%% EXPAND: expand this %%\n";
+    const mock2 = createMockProvider(["Expanded new paragraph with detail."]);
+
+    const input2: PipelineInput = {
+      content: secondChapter,
+      versionContent: String(result1!.newVersion),
+      stateContent: result1!.stateJson,
+      contextFiles: makeContextFiles(secondChapter),
+      settings: TEST_SETTINGS,
+      chapterId: "ch-01",
+      bookId: "book-1",
+      getProvider: () => mock2.provider,
+    };
+
+    const result2 = await runPipeline(input2);
+    expect(result2).not.toBeNull();
+    const r2 = result2 as PipelineResult;
+
+    // Version increments -- this is the value that upsertFile would overwrite
+    expect(r2.newVersion).toBe(2);
+
+    // State accumulates -- upsertFile overwrites the state file
+    const state2 = JSON.parse(r2.stateJson);
+    expect(state2.version).toBe(2);
+    // Should have the original processed annotation plus the new one
+    expect(state2.processedAnnotations.length).toBeGreaterThanOrEqual(2);
+
+    // The review is for version 2
+    expect(r2.reviewContent).toContain("v2");
+  });
+
   it("works with empty customVoiceRules", async () => {
     const mock = createMockProvider(["Revised passage."]);
 
