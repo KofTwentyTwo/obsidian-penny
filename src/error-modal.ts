@@ -1,9 +1,15 @@
 /**
  * PENNY - Error Modal
  *
- * Shows detailed error information in a persistent modal instead of
- * a flashing notice that disappears. Includes error message, stack trace,
- * and a link to the activity log.
+ * Obsidian Modal subclass for displaying persistent error information.
+ * Unlike Obsidian's Notice (which auto-dismisses), this modal stays open
+ * until the user explicitly closes it, giving them time to read and
+ * copy error details.
+ *
+ * Shows: error message, optional expandable stack trace / API response,
+ * and an optional path to the activity log for further investigation.
+ *
+ * Used by commands.ts when processChapter() catches an unexpected error.
  */
 
 import { Modal, App } from "obsidian";
