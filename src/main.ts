@@ -18,9 +18,10 @@
  * @module main
  */
 
-import { Menu, Plugin, Notice, TFile, requestUrl } from "obsidian";
+import { Menu, Plugin, TFile, requestUrl } from "obsidian";
 import { PennySettingTab } from "./settings";
 import { PennyStatusBar } from "./statusbar";
+import { SetupWizardModal } from "./setup-wizard";
 import { registerCommands, processChapter, requireProvider } from "./commands";
 import { DEFAULT_SETTINGS, migrateSettings } from "./types";
 import { createRegistry } from "./providers";
@@ -123,13 +124,9 @@ export default class PennyPlugin extends Plugin {
       this.statusBar?.update(activeFile, this);
     }
 
-    // First-run notice if no provider is configured.
-    // ollamaEndpoint always has a default value, so only check the API key.
-    if (!this.settings.anthropicApiKey) {
-      new Notice(
-        "PENNY loaded. Configure an LLM provider in Settings > PENNY to get started.",
-        8000
-      );
+    // First-run setup wizard
+    if (!this.settings.setupComplete) {
+      new SetupWizardModal(this).open();
     }
   }
 

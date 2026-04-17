@@ -40,6 +40,9 @@ export interface ModelRoute {
  * (see project-config.ts).
  */
 export interface PennySettings {
+  /** Whether the first-run setup wizard has been completed or skipped. */
+  setupComplete: boolean;
+
   // Provider keys & endpoints
   /** Anthropic API key (stored locally, never transmitted except to Anthropic). */
   anthropicApiKey: string;
@@ -231,6 +234,8 @@ export function migrateSettings(
 
 /** Sensible defaults for every setting. Merged with persisted data at load time. */
 export const DEFAULT_SETTINGS: PennySettings = {
+  setupComplete: false,
+
   anthropicApiKey: "",
   ollamaEndpoint: "http://localhost:11434",
   ollamaApiKey: "",

@@ -1,5 +1,185 @@
 /* PENNY - Prose Engine for Narrative, Notes, and Yarns */
 
+/* Setup wizard modal */
+.penny-wizard-modal .modal-content {
+  max-width: 580px;
+}
+
+.penny-wizard-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 20px;
+  padding: 16px 0 12px 0;
+}
+
+.penny-wizard-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8em;
+  font-weight: 700;
+  border: 2px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  background: var(--background-primary);
+  flex-shrink: 0;
+}
+
+.penny-wizard-dot-active {
+  border-color: var(--interactive-accent);
+  color: #fff;
+  background: var(--interactive-accent);
+}
+
+.penny-wizard-dot-done {
+  border-color: var(--color-green, #2ecc71);
+  color: #fff;
+  background: var(--color-green, #2ecc71);
+}
+
+.penny-wizard-line {
+  width: 40px;
+  height: 2px;
+  background: var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.penny-wizard-line-done {
+  background: var(--color-green, #2ecc71);
+}
+
+.penny-wizard-title {
+  text-align: center;
+  margin: 0 0 16px 0;
+  font-size: 1.4em;
+}
+
+.penny-wizard-body {
+  min-height: 200px;
+  margin-bottom: 20px;
+}
+
+.penny-wizard-body p {
+  line-height: 1.55;
+}
+
+.penny-wizard-body .setting-item {
+  padding: 8px 0;
+}
+
+.penny-wizard-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+  gap: 8px;
+}
+
+.penny-wizard-checklist {
+  margin: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.penny-wizard-check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.penny-wizard-check-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8em;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.penny-wizard-provider-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0 16px 0;
+}
+
+.penny-wizard-provider-card {
+  border: 2px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.penny-wizard-provider-card:hover {
+  border-color: var(--text-accent);
+}
+
+.penny-wizard-provider-selected {
+  border-color: var(--interactive-accent);
+  background: var(--background-secondary);
+}
+
+.penny-wizard-provider-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.penny-wizard-provider-name {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.penny-wizard-provider-badge {
+  font-size: 0.68em;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--interactive-accent);
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.penny-wizard-detected {
+  padding: 10px 14px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 0.9em;
+}
+
+.penny-wizard-detected ul {
+  margin: 4px 0 0 0;
+  padding-left: 20px;
+}
+
+.penny-wizard-detected li {
+  font-family: var(--font-monospace);
+  font-size: 0.9em;
+}
+
+.penny-wizard-summary p {
+  font-size: 0.95em;
+  padding: 8px 14px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
 /* Settings header -- hero banner */
 .penny-settings-header {
   margin-bottom: 16px;
