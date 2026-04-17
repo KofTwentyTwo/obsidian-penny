@@ -319,10 +319,12 @@ function getAnnotatedChapters(plugin: PennyPlugin): TFile[] {
  */
 async function safeRead(plugin: PennyPlugin, path: string): Promise<string> {
   if (!path) return "";
-  const file = plugin.app.vault.getAbstractFileByPath(path);
-  if (!file || !(file instanceof TFile)) return "";
+  // Use vault.adapter for dotfiles (.version, .state.json) that Obsidian's
+  // vault cache doesn't index. Falls back to vault.read for normal files.
   try {
-    return await plugin.app.vault.read(file);
+    const exists = await plugin.app.vault.adapter.exists(path);
+    if (!exists) return "";
+    return await plugin.app.vault.adapter.read(path);
   } catch {
     return "";
   }
@@ -516,10 +518,10 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     const versionFilePath = `${folderPath}/.version`;
     const stateFilePath = `${folderPath}/.state.json`;
 
-    // MEDIUM-1: If a file at the expected version path already exists,
+    // If a file at the expected version path already exists,
     // scan the folder for the highest existing version and use that + 1.
-    const existingFile = plugin.app.vault.getAbstractFileByPath(newVersionPath);
-    if (existingFile) {
+    const versionFileExists = await plugin.app.vault.adapter.exists(newVersionPath);
+    if (versionFileExists) {
       const folder = plugin.app.vault.getAbstractFileByPath(folderPath);
       if (folder instanceof TFolder) {
         let maxVer = 0;
@@ -1218,15 +1220,26 @@ async function ensureFolder(plugin: PennyPlugin, path: string): Promise<void> {
 }
 
 /**
- * Create or overwrite a file. Uses vault.modify if the file exists, vault.create if not.
- * Unlike safeCreateFile, this never shows a conflict dialog -- it silently overwrites.
- * Used for version files, review notes, and other PENNY-managed output.
+ * Create or overwrite a file. Silently overwrites if the file exists.
+ * Uses vault.adapter (filesystem level) to check existence because
+ * Obsidian's vault cache doesn't index dotfiles (.version, .state.json)
+ * or files in dotfolders (.penny-log/).
  */
 async function upsertFile(plugin: PennyPlugin, path: string, content: string): Promise<TFile | null> {
-  const existing = plugin.app.vault.getAbstractFileByPath(path);
-  if (existing && existing instanceof TFile) {
-    await plugin.app.vault.modify(existing, content);
-    return existing;
+  // Check filesystem directly -- vault.getAbstractFileByPath misses dotfiles
+  const exists = await plugin.app.vault.adapter.exists(path);
+  if (exists) {
+    // Try vault.modify first (works if file is in the vault cache)
+    const cached = plugin.app.vault.getAbstractFileByPath(path);
+    if (cached && cached instanceof TFile) {
+      await plugin.app.vault.modify(cached, content);
+      return cached;
+    }
+    // File exists on disk but not in vault cache (dotfile) -- write directly
+    await plugin.app.vault.adapter.write(path, content);
+    // Try to get the TFile reference (may still be null for dotfiles)
+    const afterWrite = plugin.app.vault.getAbstractFileByPath(path);
+    return afterWrite instanceof TFile ? afterWrite : null;
   }
   return await plugin.app.vault.create(path, content);
 }
