@@ -1204,17 +1204,17 @@ async function gitPush(plugin: PennyPlugin): Promise<void> {
  * Ensure a folder exists in the vault, creating parent folders as needed.
  */
 async function ensureFolder(plugin: PennyPlugin, path: string): Promise<void> {
-  const existing = plugin.app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFolder) return;
+  // Use adapter.exists for dotfolders (.penny-log) that vault cache misses
+  const exists = await plugin.app.vault.adapter.exists(path);
+  if (exists) return;
 
-  // Create parent folders recursively
   const parts = path.split("/");
   let current = "";
   for (const part of parts) {
     current = current ? `${current}/${part}` : part;
-    const folder = plugin.app.vault.getAbstractFileByPath(current);
-    if (!(folder instanceof TFolder)) {
-      await plugin.app.vault.createFolder(current);
+    const partExists = await plugin.app.vault.adapter.exists(current);
+    if (!partExists) {
+      await plugin.app.vault.adapter.mkdir(current);
     }
   }
 }
