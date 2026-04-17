@@ -21,7 +21,7 @@
 import { FileSystemAdapter, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import { execFile } from "child_process";
 import type PennyPlugin from "./main";
-import type { ProjectInitOptions } from "./types";
+import type { ProjectInitOptions, LogLevel } from "./types";
 import { parseAnnotations } from "./parser";
 import { selectVoiceTestSection } from "./context";
 import type { ContextFiles } from "./context";
@@ -495,8 +495,19 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     pennyLog("info", s.logLevel, `Processing ${file.path} (chapter: ${chapterId}, book: ${bookId})`);
 
     // Read version and state files
-    const versionContent = await safeRead(plugin, `${folderPath}/.version`);
-    const stateContent = await safeRead(plugin, `${folderPath}/.state.json`);
+    let versionContent = await safeRead(plugin, `${folderPath}/.version`);
+    let stateContent = await safeRead(plugin, `${folderPath}/.state.json`);
+
+    // Reconcile version state with actual files on disk.
+    // Users may delete version files (v2, v3, etc.) to "go back" to an earlier
+    // version. When that happens, .version and .state.json are stale.
+    // Fix: scan for the actual highest version file, reset .version and clear
+    // state entries for versions that no longer exist.
+    const reconciledState = await reconcileVersionState(
+      plugin, folderPath, chapterId, versionContent, stateContent, s.logLevel,
+    );
+    versionContent = reconciledState.versionContent;
+    stateContent = reconciledState.stateContent;
 
     // Detect characters for voice test pre-filtering
     const { frontmatter: fm } = parseFrontmatter(content);
@@ -508,33 +519,12 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
 
     pennyLog("debug", s.logLevel, `Annotations found: ${actionableCount} actionable`);
 
-    // Pre-compute all output paths and add to processingFiles BEFORE the
-    // pipeline runs, preventing the auto-save hook from picking them up
-    // during the async pipeline execution.
-    let currentVersion = readVersion(versionContent);
-    let effectiveVersionContent = versionContent;
+    // Pre-compute all output paths
+    const currentVersion = readVersion(versionContent);
     const expectedNextVersion = nextVersion(currentVersion);
-    let newVersionPath = `${folderPath}/${chapterId}.v${expectedNextVersion}.md`;
+    const newVersionPath = `${folderPath}/${chapterId}.v${expectedNextVersion}.md`;
     const versionFilePath = `${folderPath}/.version`;
     const stateFilePath = `${folderPath}/.state.json`;
-
-    // If a file at the expected version path already exists,
-    // scan the folder for the highest existing version and use that + 1.
-    const versionFileExists = await plugin.app.vault.adapter.exists(newVersionPath);
-    if (versionFileExists) {
-      const folder = plugin.app.vault.getAbstractFileByPath(folderPath);
-      if (folder instanceof TFolder) {
-        let maxVer = 0;
-        for (const child of folder.children) {
-          const match = child.name.match(/\.v(\d+)\.md$/);
-          if (match) maxVer = Math.max(maxVer, parseInt(match[1]));
-        }
-        currentVersion = maxVer;
-        effectiveVersionContent = String(maxVer);
-        const actualNextVersion = nextVersion(maxVer);
-        newVersionPath = `${folderPath}/${chapterId}.v${actualNextVersion}.md`;
-      }
-    }
 
     // Pre-compute review and log paths so they are in processingFiles
     // BEFORE the pipeline runs (prevents auto-save hook from picking them up).
@@ -557,7 +547,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     // Run the pipeline (pass pre-parsed annotations to avoid redundant parsing)
     const result = await runPipeline({
       content,
-      versionContent: effectiveVersionContent,
+      versionContent: versionContent,
       stateContent,
       contextFiles,
       settings: s,
@@ -1200,6 +1190,87 @@ async function gitPush(plugin: PennyPlugin): Promise<void> {
 // ============================================================================
 // Project scaffolding
 // ============================================================================
+
+/**
+ * Reconcile .version and .state.json with actual version files on disk.
+ *
+ * When a user deletes version files (common workflow: "go back to v1"),
+ * .version and .state.json become stale. This function:
+ * 1. Scans the folder for the highest existing version file
+ * 2. If .version is higher than what exists, resets it
+ * 3. Removes state entries for versions that no longer exist
+ * 4. Writes corrected files to disk
+ *
+ * Returns the corrected versionContent and stateContent strings for the pipeline.
+ */
+async function reconcileVersionState(
+  plugin: PennyPlugin,
+  folderPath: string,
+  _chapterId: string,
+  versionContent: string,
+  stateContent: string,
+  logLevel: LogLevel,
+): Promise<{ versionContent: string; stateContent: string }> {
+  const recordedVersion = readVersion(versionContent);
+  if (recordedVersion === 0) {
+    // No version recorded yet -- nothing to reconcile
+    return { versionContent, stateContent };
+  }
+
+  // Scan the folder for actual version files on disk
+  const folder = plugin.app.vault.getAbstractFileByPath(folderPath);
+  let maxExistingVersion = 0;
+  const existingVersions = new Set<number>();
+
+  if (folder instanceof TFolder) {
+    for (const child of folder.children) {
+      const match = child.name.match(/\.v(\d+)\.md$/);
+      if (match) {
+        const v = parseInt(match[1]);
+        existingVersions.add(v);
+        maxExistingVersion = Math.max(maxExistingVersion, v);
+      }
+    }
+  }
+
+  // If the recorded version matches reality, no reconciliation needed
+  if (recordedVersion <= maxExistingVersion) {
+    return { versionContent, stateContent };
+  }
+
+  // Versions have been deleted. Reset .version to the actual max.
+  pennyLog("info", logLevel,
+    `Version reconciliation: .version says ${recordedVersion} but highest file is v${maxExistingVersion}. Resetting.`);
+
+  const newVersionContent = String(maxExistingVersion);
+
+  // Parse state and remove entries for versions that no longer exist
+  let newStateContent = stateContent;
+  try {
+    const state = JSON.parse(stateContent);
+    if (state && Array.isArray(state.processedAnnotations)) {
+      state.processedAnnotations = state.processedAnnotations.filter(
+        (pa: { processedInVersion?: number }) =>
+          typeof pa.processedInVersion === "number" && existingVersions.has(pa.processedInVersion)
+      );
+      state.version = maxExistingVersion;
+      newStateContent = JSON.stringify(state, null, 2);
+    }
+  } catch {
+    // Corrupted state -- reset completely
+    newStateContent = JSON.stringify({
+      version: maxExistingVersion,
+      lastProcessed: null,
+      processedAnnotations: [],
+    }, null, 2);
+  }
+
+  // Write corrected files to disk
+  await plugin.app.vault.adapter.write(`${folderPath}/.version`, newVersionContent);
+  await plugin.app.vault.adapter.write(`${folderPath}/.state.json`, newStateContent);
+
+  return { versionContent: newVersionContent, stateContent: newStateContent };
+}
 
 /**
  * Ensure a folder exists in the vault, creating parent folders as needed.
