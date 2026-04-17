@@ -1,7 +1,14 @@
 /**
  * PENNY - Chapter Migration (pure logic)
  *
- * Logic for converting flat chapter files to versioned folders.
+ * Logic for converting flat chapter files (`04-drafts/book-1/ch-01.md`)
+ * to versioned folder structure (`04-drafts/book-1/ch-01/ch-01.v1.md`
+ * with `.version` and `.state.json` sidecar files).
+ *
+ * Called by commands.ts when the user runs "Migrate chapters". The actual
+ * file I/O (create folder, move file, delete original) happens in commands.ts;
+ * this module only provides planning and content generation.
+ *
  * Pure functions -- no Obsidian API dependencies.
  */
 
@@ -9,6 +16,7 @@ import type { VersionState } from "./types";
 
 /**
  * A migration plan for a single chapter file.
+ * Describes source and target paths without performing any I/O.
  */
 export interface MigrationPlan {
   /** Original flat file path, e.g. `04-drafts/book-1/ch-01.md` */
@@ -32,6 +40,9 @@ export interface MigrationPlan {
  * Flat chapter files match `ch-NN.md` (not `ch-NN.vN.md` which are already
  * versioned). Paths that look like they are already inside a chapter folder
  * are marked as `alreadyMigrated`.
+ *
+ * @param files - All file paths in the drafts tree
+ * @returns A MigrationPlan for each flat chapter file found
  */
 export function planMigration(files: string[]): MigrationPlan[] {
   const plans: MigrationPlan[] = [];

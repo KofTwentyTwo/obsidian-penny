@@ -1,17 +1,29 @@
 /**
  * PENNY - Voice Compliance
  *
- * Analyze prose for voice compliance: dialogue ratio, long narration
- * sentences, and self-analysis patterns.
+ * Analyzes prose for adherence to the project's voice rules by computing
+ * three metrics:
+ * 1. Dialogue-to-narration ratio (how much of the text is spoken dialogue)
+ * 2. Long narration sentences (narration sentences exceeding a word threshold)
+ * 3. Self-analysis flags (lines matching internal monologue / "she thought" patterns)
+ *
+ * Called by pipeline.ts after a new version is assembled. Results are
+ * included in the review note and activity log so the author can spot
+ * voice drift.
+ *
  * Pure function -- no Obsidian API dependencies.
  */
 
 import type { VoiceComplianceResult } from "./types";
 
-/** Maximum allowed words in a narration sentence before flagging. */
+/** Maximum allowed words in a narration sentence before flagging it as "long". */
 const MAX_NARRATION_WORDS = 20;
 
-/** Patterns that indicate self-analysis / internal monologue. */
+/**
+ * Regex patterns that indicate self-analysis / internal monologue.
+ * These are voice violations for projects that forbid narrated inner thought
+ * (e.g. the protagonist who only thinks by talking aloud).
+ */
 const SELF_ANALYSIS_PATTERNS: RegExp[] = [
   /\bmy brain\b/i,
   /\bI feel\b/i,

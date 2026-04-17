@@ -88,10 +88,117 @@ export default class PennyPlugin extends Plugin {
     const statusBarEl = this.addStatusBarItem();
     this.statusBar = new PennyStatusBar(statusBarEl);
 
-    // Add ribbon icon -- click to process the active chapter
-    this.addRibbonIcon("pen-tool", "PENNY: Process this chapter", () => {
-      executeCommand(this.app, "penny:process-chapter");
+    // Add ribbon icon -- click to open the PENNY command menu
+    this.addRibbonIcon("pen-tool", "PENNY", (evt) => {
+      const menu = new Menu();
+
+      menu.addItem((item) =>
+        item
+          .setTitle("Process this chapter")
+          .setIcon("zap")
+          .onClick(() => executeCommand(this.app, "penny:process-chapter"))
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("Process all chapters")
+          .setIcon("layers")
+          .onClick(() => executeCommand(this.app, "penny:process-all"))
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("Dry run")
+          .setIcon("eye")
+          .onClick(() => executeCommand(this.app, "penny:dry-run"))
+      );
+      menu.addSeparator();
+      menu.addItem((item) =>
+        item
+          .setTitle("Do research")
+          .setIcon("search")
+          .onClick(() => executeCommand(this.app, "penny:research"))
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("Show status")
+          .setIcon("info")
+          .onClick(() => executeCommand(this.app, "penny:status"))
+      );
+      menu.addSeparator();
+      menu.addItem((item) =>
+        item
+          .setTitle("New chapter")
+          .setIcon("file-plus")
+          .onClick(() => executeCommand(this.app, "penny:new-chapter"))
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("New character")
+          .setIcon("user-plus")
+          .onClick(() => executeCommand(this.app, "penny:new-character"))
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("Initialize project")
+          .setIcon("folder-plus")
+          .onClick(() => executeCommand(this.app, "penny:init"))
+      );
+      menu.addSeparator();
+      menu.addItem((item) =>
+        item
+          .setTitle("Migrate chapters")
+          .setIcon("folder-input")
+          .onClick(() => executeCommand(this.app, "penny:migrate"))
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("Git commit")
+          .setIcon("git-commit-horizontal")
+          .onClick(() => executeCommand(this.app, "penny:git-commit"))
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("Git push")
+          .setIcon("upload")
+          .onClick(() => executeCommand(this.app, "penny:git-push"))
+      );
+
+      menu.showAtMouseEvent(evt);
     });
+
+    // Add right-click context menu items in the editor
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu) => {
+        menu.addSeparator();
+
+        menu.addItem((item) => {
+          item
+            .setTitle("PENNY: Process this chapter")
+            .setIcon("pen-tool")
+            .onClick(() => executeCommand(this.app, "penny:process-chapter"));
+        });
+
+        menu.addItem((item) => {
+          item
+            .setTitle("PENNY: Dry run")
+            .setIcon("eye")
+            .onClick(() => executeCommand(this.app, "penny:dry-run"));
+        });
+
+        menu.addItem((item) => {
+          item
+            .setTitle("PENNY: Show status")
+            .setIcon("info")
+            .onClick(() => executeCommand(this.app, "penny:status"));
+        });
+
+        menu.addItem((item) => {
+          item
+            .setTitle("PENNY: Do research")
+            .setIcon("search")
+            .onClick(() => executeCommand(this.app, "penny:research"));
+        });
+      })
+    );
 
     // Update status bar when the active file changes
     this.registerEvent(

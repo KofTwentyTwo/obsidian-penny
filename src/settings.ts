@@ -279,6 +279,7 @@ export class PennySettingTab extends PluginSettingTab {
       this.renderRouteRow(details, "Light (CUT, PACING)", "routeLight", providerNames);
       this.renderRouteRow(details, "Standard (TONE, EXPAND, PLOT)", "routeStandard", providerNames);
       this.renderRouteRow(details, "Heavy (REWRITE, DIALOG, CHARACTER)", "routeHeavy", providerNames);
+      this.renderRouteRow(details, "Research (Do research command)", "routeResearch", providerNames);
     }
 
     // Context budget (moved here from old API section since it relates to routing)
@@ -458,7 +459,7 @@ export class PennySettingTab extends PluginSettingTab {
     );
 
     const pathSettings: Array<{
-      key: keyof typeof this.plugin.settings;
+      key: keyof PennySettings;
       name: string;
       desc: string;
       placeholder: string;
@@ -1019,7 +1020,7 @@ export class PennySettingTab extends PluginSettingTab {
 
     const commands: Array<{ name: string; desc: string }> = [
       { name: "PENNY: Initialize project", desc: "Scaffold a new novel project structure" },
-      { name: "PENNY: Process this chapter", desc: "Process annotations in the active chapter" },
+      { name: "PENNY: Process this chapter", desc: "Process annotations in the active chapter (Cmd/Ctrl+Shift+P)" },
       { name: "PENNY: Process all chapters", desc: "Process all annotated chapters in the current book" },
       { name: "PENNY: Dry run", desc: "Show what would change without processing" },
       { name: "PENNY: Migrate chapters", desc: "Convert flat chapter files to versioned folders" },

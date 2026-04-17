@@ -55,6 +55,8 @@ export interface PennySettings {
   routeStandard: ModelRoute;
   /** Model route for complex tasks (REWRITE, DIALOG, CHARACTER). */
   routeHeavy: ModelRoute;
+  /** Model route for research queries (PENNY: Do research command). */
+  routeResearch: ModelRoute;
   /** When true, all tiers use the routeStandard model, ignoring light/heavy. */
   useSameModelForAll: boolean;
 
@@ -226,6 +228,7 @@ export const DEFAULT_SETTINGS: PennySettings = {
   routeLight: { provider: "anthropic", model: "auto-latest" },
   routeStandard: { provider: "anthropic", model: "auto-latest" },
   routeHeavy: { provider: "anthropic", model: "auto-latest" },
+  routeResearch: { provider: "anthropic", model: "auto-latest" },
   useSameModelForAll: false,
 
   contextBudget: 800000,

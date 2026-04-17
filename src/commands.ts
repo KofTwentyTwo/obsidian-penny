@@ -51,6 +51,7 @@ export function registerCommands(plugin: PennyPlugin): void {
   plugin.addCommand({
     id: "penny:process-chapter",
     name: "Process this chapter",
+    hotkeys: [{ modifiers: ["Mod", "Shift"], key: "p" }],
     checkCallback: (checking: boolean) => {
       const file = plugin.app.workspace.getActiveFile();
       if (!file || !isChapterFile(file, plugin)) return false;
@@ -104,6 +105,7 @@ export function registerCommands(plugin: PennyPlugin): void {
   plugin.addCommand({
     id: "penny:dry-run",
     name: "Dry run",
+    hotkeys: [{ modifiers: ["Mod", "Shift"], key: "d" }],
     checkCallback: (checking: boolean) => {
       const file = plugin.app.workspace.getActiveFile();
       if (!file || !isChapterFile(file, plugin)) return false;
@@ -127,6 +129,7 @@ export function registerCommands(plugin: PennyPlugin): void {
   plugin.addCommand({
     id: "penny:status",
     name: "Show status",
+    hotkeys: [{ modifiers: ["Mod", "Shift"], key: "s" }],
     checkCallback: (checking: boolean) => {
       const file = plugin.app.workspace.getActiveFile();
       if (!file) return false;
@@ -187,6 +190,7 @@ export function registerCommands(plugin: PennyPlugin): void {
   plugin.addCommand({
     id: "penny:research",
     name: "Do research",
+    hotkeys: [{ modifiers: ["Mod", "Shift"], key: "r" }],
     callback: () => {
       new ResearchModal(plugin).open();
     },
@@ -1959,8 +1963,8 @@ async function executeResearch(plugin: PennyPlugin, query: string): Promise<void
   const s = plugin.settings;
   const researchFolder = normalizePath(s.researchFolder || "06-reference/research");
 
-  // Use the standard route for research (balanced cost/quality)
-  const route = s.routeStandard;
+  // Use the research route (configurable in settings under Model Routing)
+  const route = s.routeResearch;
   const provider = plugin.providerRegistry.get(route.provider);
   if (!provider) {
     throw new Error(`Provider "${route.provider}" not available. Check your settings.`);

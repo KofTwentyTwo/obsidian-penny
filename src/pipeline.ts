@@ -116,7 +116,11 @@ export interface PipelineResult {
 
 /**
  * Build the RouteConfig from plugin settings.
- * When useSameModelForAll is true, all tiers use the standard route.
+ * When useSameModelForAll is true, all tiers use the standard route,
+ * giving a uniform model experience regardless of annotation complexity.
+ *
+ * @param s - Current plugin settings
+ * @returns A RouteConfig with light/standard/heavy tier assignments
  */
 export function buildRouteConfig(s: PennySettings): RouteConfig {
   if (s.useSameModelForAll) {
@@ -137,7 +141,12 @@ export function buildRouteConfig(s: PennySettings): RouteConfig {
  * Run the core processing pipeline on chapter content.
  *
  * Pure logic except for LLM calls (injected via getProvider).
- * Returns null if there are no new annotations to process.
+ * Processes each actionable annotation sequentially, building up
+ * revisions that are then assembled into a new chapter version.
+ *
+ * @param input - All pre-read content, settings, and injected dependencies
+ * @returns Pipeline result with new content, state, review, and log data,
+ *          or null if there are no new annotations to process
  */
 export async function runPipeline(input: PipelineInput): Promise<PipelineResult | null> {
   const startTime = Date.now();
