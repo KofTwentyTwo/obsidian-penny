@@ -55,7 +55,8 @@ export function parseFrontmatter(content: string): {
     }
 
     // Key: value pair
-    const kvMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)/);
+    // Allow hyphens in key names (e.g., book-appearance, agent_last_revised)
+    const kvMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:\s*(.*)/);
     if (!kvMatch) continue;
 
     const key = kvMatch[1];

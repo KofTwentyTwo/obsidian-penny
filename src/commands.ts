@@ -14,7 +14,7 @@ import { selectVoiceTestSection } from "./context";
 import type { ContextFiles } from "./context";
 import { parseFrontmatter, detectCharacters } from "./frontmatter";
 import { getReviewFilePath } from "./reviewer";
-import { getLogFilePath } from "./logger";
+import { getLogFilePath, pennyLog } from "./logger";
 import { runPipeline } from "./pipeline";
 import type { PipelineResult } from "./pipeline";
 import { showPennyError } from "./error-modal";
@@ -224,22 +224,22 @@ export function requireProvider(plugin: PennyPlugin): boolean {
 
     if (provider === "anthropic") {
       if (!s.anthropicApiKey) {
-        new Notice(
-          `PENNY: Route ${tierLabel} uses Anthropic but no API key is set. Open Settings > PENNY > Providers.`
-        );
+        showPennyError(plugin.app,
+          `Route ${tierLabel} uses Anthropic but no API key is set.`,
+          "Open Settings > PENNY > Providers to configure your Anthropic API key.");
         return false;
       }
     } else if (provider === "ollama") {
       if (!s.ollamaEndpoint) {
-        new Notice(
-          `PENNY: Route ${tierLabel} uses Ollama but no endpoint is configured. Open Settings > PENNY > Providers.`
-        );
+        showPennyError(plugin.app,
+          `Route ${tierLabel} uses Ollama but no endpoint is configured.`,
+          "Open Settings > PENNY > Providers to configure the Ollama endpoint.");
         return false;
       }
     } else {
-      new Notice(
-        `PENNY: Route ${tierLabel} uses unknown provider '${provider}'. Check Settings > PENNY > Model Routing.`
-      );
+      showPennyError(plugin.app,
+        `Route ${tierLabel} uses unknown provider '${provider}'.`,
+        "Check Settings > PENNY > Model Routing.");
       return false;
     }
   }
@@ -413,7 +413,9 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     content = await plugin.app.vault.read(file);
   } catch (readErr) {
     const msg = readErr instanceof Error ? readErr.message : String(readErr);
-    new Notice(`PENNY: Failed to read ${file.basename} -- ${msg}`);
+    showPennyError(plugin.app,
+      `Failed to read ${file.basename}`,
+      msg);
     return null;
   }
 
@@ -449,9 +451,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     const chapterId = chapterIdFromFile(file);
     const bookId = bookIdFromFile(file);
 
-    if (s.verboseLogging) {
-      console.log(`[PENNY] Processing ${file.path} (chapter: ${chapterId}, book: ${bookId})`);
-    }
+    pennyLog("info", s.logLevel, `Processing ${file.path} (chapter: ${chapterId}, book: ${bookId})`);
 
     // Read version and state files
     const versionContent = await safeRead(plugin, `${folderPath}/.version`);
@@ -465,9 +465,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     // Gather context files from vault
     const contextFiles = await gatherContextFiles(plugin, content, detectedChars, bookId);
 
-    if (s.verboseLogging) {
-      console.log(`[PENNY] Annotations found: ${actionableCount} actionable`);
-    }
+    pennyLog("debug", s.logLevel, `Annotations found: ${actionableCount} actionable`);
 
     // Pre-compute all output paths and add to processingFiles BEFORE the
     // pipeline runs, preventing the auto-save hook from picking them up
@@ -526,9 +524,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       bookId,
       preParsedAnnotations: allAnnotations,
       getProvider: (name: string) => {
-        if (s.verboseLogging) {
-          console.log(`[PENNY] Provider requested: ${name}`);
-        }
+        pennyLog("debug", s.logLevel, `Provider requested: ${name}`);
         return plugin.providerRegistry.get(name);
       },
       onProgress: (event) => modal?.update(event),
@@ -538,14 +534,16 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     if (!result) {
       if (modal) modal.close();
       if (!options?.silent) {
-        new Notice(`PENNY: No new annotations to process in ${file.basename}.`);
+        const wasCancelled = modal?.isCancelled();
+        new Notice(wasCancelled
+          ? `PENNY: Processing of ${file.basename} was cancelled.`
+          : `PENNY: No new annotations to process in ${file.basename}.`
+        );
       }
       return null;
     }
 
-    if (s.verboseLogging) {
-      console.log(`[PENNY] Pipeline complete: ${result.annotationsProcessed} processed, v${result.newVersion} (${result.durationMs}ms)`);
-    }
+    pennyLog("info", s.logLevel, `Pipeline complete: ${result.annotationsProcessed} processed, v${result.newVersion} (${result.durationMs}ms)`);
 
     // Write new version file
     await plugin.app.vault.create(newVersionPath, result.newContent);
@@ -582,9 +580,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       await plugin.app.vault.create(logPath, result.logLine);
     }
 
-    if (s.verboseLogging) {
-      console.log(`[PENNY] Version ${result.newVersion} created for ${chapterId}`);
-    }
+    pennyLog("info", s.logLevel, `Version ${result.newVersion} created for ${chapterId}`);
 
     // Show completion notice
     const errorNote = result.hadErrors ? " (with errors -- check review note)" : "";
@@ -708,9 +704,9 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
   const abstractFile = plugin.app.vault.getAbstractFileByPath(draftsFolder);
 
   if (!abstractFile || !(abstractFile instanceof TFolder)) {
-    new Notice(
-      `PENNY: Drafts folder "${draftsFolder}" not found. Check your project structure settings.`
-    );
+    showPennyError(plugin.app,
+      `Drafts folder "${draftsFolder}" not found.`,
+      "Check your project structure settings in Settings > PENNY > Project Structure.");
     return;
   }
 
@@ -753,16 +749,16 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
         // Verify the written file matches the original content
         const versionedFile = plugin.app.vault.getAbstractFileByPath(versionedFilePath);
         if (!versionedFile || !(versionedFile instanceof TFile)) {
-          new Notice(
-            `PENNY: Migration verification failed for ${bookChild.path} -- versioned file not found after write. Original left intact.`
-          );
+          showPennyError(plugin.app,
+            `Migration verification failed for ${bookChild.path}`,
+            "Versioned file not found after write. Original left intact.");
           continue;
         }
         const writtenContent = await plugin.app.vault.read(versionedFile);
         if (writtenContent !== content) {
-          new Notice(
-            `PENNY: Migration verification failed for ${bookChild.path} -- written content does not match original. Original left intact.`
-          );
+          showPennyError(plugin.app,
+            `Migration verification failed for ${bookChild.path}`,
+            "Written content does not match original. Original left intact.");
           continue;
         }
 
@@ -779,9 +775,9 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
         migratedCount++;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        new Notice(
-          `PENNY: Failed to migrate ${bookChild.path} -- ${message}`
-        );
+        showPennyError(plugin.app,
+          `Failed to migrate ${bookChild.path}`,
+          message);
       }
     }
   }
@@ -857,7 +853,7 @@ async function createNewChapter(plugin: PennyPlugin): Promise<void> {
     new Notice(`PENNY: Created ${chapterName} in ${bookFolderPath}.`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    new Notice(`PENNY: Failed to create chapter -- ${message}`);
+    showPennyError(plugin.app, `Failed to create chapter`, message);
   }
 }
 
@@ -1972,11 +1968,16 @@ Rules:
 - The FILENAME should be descriptive and use kebab-case.
 - Include relevant numbers, measurements, and specifics.`;
 
+  const resolvedModel = route.model === "auto-latest" ? "claude-sonnet-4-6" : route.model;
   const response = await provider.complete({
     systemPrompt,
     userPrompt: query,
-    model: route.model === "auto-latest" ? "claude-sonnet-4-6" : route.model,
+    model: resolvedModel,
     maxTokens: s.maxTokens ?? 16000,
+    apiKey: route.provider === "anthropic" ? s.anthropicApiKey
+          : route.provider === "ollama" ? (s.ollamaApiKey || undefined)
+          : undefined,
+    endpoint: route.provider === "ollama" ? s.ollamaEndpoint : undefined,
   });
 
   const text = response.text;

@@ -1,15 +1,30 @@
 /**
  * PENNY - Version Assembly
  *
- * Builds a new version of a chapter from processed revisions.
- * Works bottom-up to preserve line numbers during replacement.
+ * Builds a new chapter version by splicing LLM-produced revisions into
+ * the original chapter text. Called by pipeline.ts after all annotations
+ * have been processed.
+ *
+ * Key design decisions:
+ * - Processes revisions bottom-up (highest lineStart first) so that
+ *   earlier line numbers remain valid as later ranges are replaced.
+ * - Detects overlapping annotation ranges and keeps the larger-scope
+ *   one, reporting the smaller as a skipped overlap in the result.
+ * - Strips processed actionable annotations from the output while
+ *   preserving passthrough annotations (NOTE, RESEARCH).
+ * - Inserts `%% REVISED(vN) %%` markers after each replacement for
+ *   traceability.
+ *
  * Pure function -- no Obsidian API dependencies.
  */
 
 import type { AnnotatedSection } from "./types";
 import { PASSTHROUGH_TAGS } from "./types";
 
-/** Non-global regex pattern for matching annotations. A new RegExp is created per use. */
+/**
+ * Non-global regex pattern for matching annotations. A new RegExp with the 'g'
+ * flag is created from this source per use-site to avoid shared lastIndex state.
+ */
 const ANNOTATION_PATTERN = /%%\s*([A-Z]+)\s*:\s*(.*?)\s*%%/;
 
 function wordCount(text: string): number {

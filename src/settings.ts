@@ -708,18 +708,22 @@ export class PennySettingTab extends PluginSettingTab {
       );
 
     new Setting(details)
-      .setName("Verbose logging")
+      .setName("Log level")
       .setDesc(
-        "Write detailed activity entries to the log. Useful for debugging but increases log file size."
+        "Controls how much detail PENNY writes to the developer console (Cmd+Opt+I). Debug = maximum detail, Off = silent."
       )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.verboseLogging)
-          .onChange(async (value) => {
-            this.plugin.settings.verboseLogging = value;
-            await this.plugin.saveSettings();
-          })
-      );
+      .addDropdown((dropdown) => {
+        dropdown.addOption("debug", "Debug (maximum detail)");
+        dropdown.addOption("info", "Info");
+        dropdown.addOption("warn", "Warnings only");
+        dropdown.addOption("error", "Errors only");
+        dropdown.addOption("off", "Off (silent)");
+        dropdown.setValue(this.plugin.settings.logLevel);
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.logLevel = value as import("./types").LogLevel;
+          await this.plugin.saveSettings();
+        });
+      });
 
     new Setting(details)
       .setName("Chapter file pattern")

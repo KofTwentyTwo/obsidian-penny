@@ -1,7 +1,19 @@
 /**
  * PENNY - Annotation Parser
  *
- * Parses `%% TAG: instruction %%` annotations from markdown text.
+ * Extracts editorial annotations from markdown chapter files.
+ * Called by pipeline.ts (and commands.ts for dry-run / status).
+ * Returns an array of AnnotatedSection objects sorted by line position.
+ *
+ * Supports two annotation forms:
+ * - Single-line: `%% TAG: instruction %%`
+ * - Multi-line:  `%% TAG: instruction text\ncontinued...\n%%`
+ *
+ * Scope resolution determines WHAT each annotation targets:
+ * - Inline:    annotation shares a line with prose -> targets that line
+ * - Paragraph: annotation on its own line -> targets the paragraph above
+ * - Section:   annotation below a heading -> targets everything to the next heading
+ *
  * Pure function -- no Obsidian API dependencies.
  */
 
@@ -13,15 +25,23 @@ import {
   ALL_TAGS,
 } from "./types";
 
-/** Single-line annotation pattern. */
+/** Single-line annotation: `%% TAG: instruction %%` on one line. Captures tag and instruction. */
 const ANNOTATION_PATTERN = /%%\s*([A-Z]+)\s*:\s*(.*?)\s*%%/;
 
-/** Multi-line annotation: opening %% TAG: ... without closing %% on same line */
+/**
+ * Multi-line annotation opening: `%% TAG: instruction text...` (no closing %% on same line).
+ * The instruction may continue across subsequent lines until a closing %% is found.
+ */
 const MULTILINE_OPEN = /%%\s*([A-Z]+)\s*:\s*(.*)/;
+/** Multi-line annotation closing: captures any text before the closing %%. */
 const MULTILINE_CLOSE = /(.*)%%/;
 
 /**
  * Strip all annotation markers from a string (single-line and multi-line).
+ * Used when building originalText so the passage content is clean prose.
+ *
+ * @param text - Raw line or block that may contain annotation markers
+ * @returns The text with all `%% ... %%` patterns removed
  */
 function stripAnnotations(text: string): string {
   // Strip single-line annotations first
@@ -33,10 +53,16 @@ function stripAnnotations(text: string): string {
 
 /**
  * Generate a deterministic hash from the annotation's identity fields.
- * Uses a simple hash (cyrb53 variant) since we need pure-function behavior
- * that runs in both Node and Obsidian's Electron renderer without crypto
- * dependencies.  Hex-encoded, truncated to 12 chars to match the spec's
- * example format `"a1b2c3d4e5f6"`.
+ *
+ * Used for idempotency: the versioner tracks processed hashes so the same
+ * annotation is never sent to the LLM twice. Uses a cyrb53 variant rather
+ * than crypto APIs because it must be a pure function that works in both
+ * Node (tests) and Obsidian's Electron renderer without dependencies.
+ *
+ * @param tag         - The annotation tag (e.g. "REWRITE")
+ * @param instruction - The author's instruction text
+ * @param originalText - The prose passage the annotation targets
+ * @returns A 12-character hex string (least-significant digits for max entropy)
  */
 function hashAnnotation(tag: string, instruction: string, originalText: string): string {
   const input = `${tag}|${instruction}|${originalText}`;
@@ -56,10 +82,12 @@ function hashAnnotation(tag: string, instruction: string, originalText: string):
   return n.toString(16).padStart(12, "0").slice(-12);
 }
 
+/** Type guard: true if the tag string is a recognized annotation tag. */
 function isValidTag(tag: string): tag is AnnotationTag {
   return (ALL_TAGS as readonly string[]).includes(tag);
 }
 
+/** True if the tag triggers LLM processing (not a passthrough tag). */
 function isActionableTag(tag: string): boolean {
   return (ACTIONABLE_TAGS as readonly string[]).includes(tag);
 }
@@ -83,6 +111,15 @@ function isBlank(line: string): boolean {
 /**
  * Determine the scope, lineStart, and lineEnd for an annotation found at
  * `annotationLineIndex` in the array of `lines`.
+ *
+ * Resolution logic:
+ * 1. If the annotation shares its line with non-annotation text -> "inline"
+ * 2. If the nearest non-blank line above is a heading -> "section" (to next same-level heading)
+ * 3. Otherwise -> "paragraph" (the paragraph block above the annotation)
+ *
+ * @param lines               - All lines of the chapter file
+ * @param annotationLineIndex - Zero-based index of the line containing the annotation
+ * @returns Scope type plus the inclusive [lineStart, lineEnd] range
  */
 function resolveScope(
   lines: string[],
@@ -136,11 +173,16 @@ function resolveScope(
 }
 
 /**
- * Parse all annotations from a markdown string.
+ * Parse all annotations from a markdown chapter string.
  *
- * Returns an array of `AnnotatedSection` objects sorted by `lineStart`
- * ascending.  Malformed annotations (unrecognised tags, missing instruction)
- * are silently skipped.
+ * Scans every line for single-line and multi-line annotation patterns.
+ * For each valid annotation found, resolves its scope (inline, paragraph,
+ * or section) and extracts the targeted prose passage.
+ *
+ * @param content - The full markdown content of a chapter file
+ * @returns Array of AnnotatedSection objects sorted by lineStart ascending.
+ *          Malformed annotations (unrecognized tags, empty instruction) are
+ *          silently skipped.
  */
 export function parseAnnotations(content: string): AnnotatedSection[] {
   const lines = content.split("\n");

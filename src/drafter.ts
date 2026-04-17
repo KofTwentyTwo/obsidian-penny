@@ -22,6 +22,8 @@ const SECTION_PLACEHOLDERS: Record<string, { label: string; contextKey?: keyof A
   "{outline}": { label: "Plot Outline", contextKey: "outline" },
   "{characters}": { label: "Character References", contextKey: "characters" },
   "{wiki}": { label: "Wiki/Lore References", contextKey: "wiki" },
+  "{series_bible}": { label: "Series Bible", contextKey: "seriesBible" },
+  "{themes}": { label: "Themes", contextKey: "themes" },
   "{chapter}": { label: "Current Chapter", contextKey: "chapter" },
 };
 
