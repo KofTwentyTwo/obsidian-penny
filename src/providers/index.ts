@@ -38,6 +38,8 @@ export { ProviderRegistry } from "./registry";
 // Provider implementations
 export { AnthropicProvider, ANTHROPIC_MODELS } from "./anthropic";
 export { OllamaProvider } from "./ollama";
+export { GoogleProvider, GOOGLE_MODELS } from "./google";
+export { OpenAIProvider, OPENAI_MODELS } from "./openai";
 
 // -- Convenience factory --
 
@@ -45,6 +47,8 @@ import type { HttpFn } from "./service";
 import { ProviderRegistry } from "./registry";
 import { AnthropicProvider } from "./anthropic";
 import { OllamaProvider } from "./ollama";
+import { GoogleProvider } from "./google";
+import { OpenAIProvider } from "./openai";
 
 /**
  * Create a fresh ProviderRegistry pre-populated with all built-in providers.
@@ -64,5 +68,7 @@ export function createRegistry(httpFn: HttpFn): ProviderRegistry {
   const reg = new ProviderRegistry();
   reg.register(new AnthropicProvider(httpFn));
   reg.register(new OllamaProvider(httpFn));
+  reg.register(new GoogleProvider(httpFn));
+  reg.register(new OpenAIProvider(httpFn));
   return reg;
 }

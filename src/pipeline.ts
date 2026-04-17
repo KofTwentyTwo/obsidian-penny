@@ -270,6 +270,8 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         maxTokens: settings.maxTokens ?? 16000,
         apiKey: route.provider === "anthropic" ? settings.anthropicApiKey
               : route.provider === "ollama" ? (settings.ollamaApiKey || undefined)
+              : route.provider === "google" ? settings.googleApiKey
+              : route.provider === "openai" ? settings.openaiApiKey
               : undefined,
         endpoint: route.provider === "ollama" ? settings.ollamaEndpoint : undefined,
         useThinking,

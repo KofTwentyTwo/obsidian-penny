@@ -491,6 +491,8 @@ export class PennySettingTab extends PluginSettingTab {
     const route = this.plugin.settings[routeKey];
 
     const anthropicModels = ANTHROPIC_MODELS.map((m) => ({ id: m.id, name: m.name }));
+    const googleModels = GOOGLE_MODELS.map((m) => ({ id: m.id, name: m.name }));
+    const openaiModels = OPENAI_MODELS.map((m) => ({ id: m.id, name: m.name }));
 
     const setting = new Setting(container).setName(label);
 
@@ -502,9 +504,13 @@ export class PennySettingTab extends PluginSettingTab {
       dropdown.setValue(route.provider);
       dropdown.onChange(async (value) => {
         route.provider = value;
-        // When switching to Ollama, keep model text; switching to Anthropic, default to sonnet
+        // When switching providers, default to a sensible model if the current one doesn't match
         if (value === "anthropic" && !anthropicModels.some((m) => m.id === route.model)) {
           route.model = "claude-sonnet-4-6";
+        } else if (value === "google" && !googleModels.some((m) => m.id === route.model)) {
+          route.model = "gemini-2.5-flash";
+        } else if (value === "openai" && !openaiModels.some((m) => m.id === route.model)) {
+          route.model = "gpt-4.1";
         }
         if (mirrorAll) {
           this.plugin.settings.routeLight = { ...route };
@@ -515,7 +521,7 @@ export class PennySettingTab extends PluginSettingTab {
       });
     });
 
-    // Model selector: dropdown for Anthropic, text input for Ollama
+    // Model selector: dropdown for providers with static catalogs, text input for Ollama
     if (route.provider === "anthropic") {
       // Determine which tier this route represents (for display purposes)
       const tierLabel = routeKey === "routeLight" ? "light"
@@ -531,6 +537,36 @@ export class PennySettingTab extends PluginSettingTab {
       setting.addDropdown((dropdown) => {
         dropdown.addOption("auto-latest", autoLabel);
         for (const m of anthropicModels) {
+          dropdown.addOption(m.id, m.name);
+        }
+        dropdown.setValue(route.model);
+        dropdown.onChange(async (value) => {
+          route.model = value;
+          if (mirrorAll) {
+            this.plugin.settings.routeLight = { ...route };
+            this.plugin.settings.routeHeavy = { ...route };
+          }
+          await this.plugin.saveSettings();
+        });
+      });
+    } else if (route.provider === "google") {
+      setting.addDropdown((dropdown) => {
+        for (const m of googleModels) {
+          dropdown.addOption(m.id, m.name);
+        }
+        dropdown.setValue(route.model);
+        dropdown.onChange(async (value) => {
+          route.model = value;
+          if (mirrorAll) {
+            this.plugin.settings.routeLight = { ...route };
+            this.plugin.settings.routeHeavy = { ...route };
+          }
+          await this.plugin.saveSettings();
+        });
+      });
+    } else if (route.provider === "openai") {
+      setting.addDropdown((dropdown) => {
+        for (const m of openaiModels) {
           dropdown.addOption(m.id, m.name);
         }
         dropdown.setValue(route.model);
