@@ -1,8 +1,14 @@
 /**
  * PENNY - Activity Logger
  *
- * Formats activity log entries as JSONL for append-only logging.
- * Actual file I/O is handled by the command layer via Obsidian's vault API.
+ * Provides two logging facilities:
+ * 1. JSONL activity log entries -- one JSON object per processing pass,
+ *    appended to `{activityLogFolder}/{book}-activity.jsonl` by commands.ts.
+ * 2. Console logging -- level-filtered messages to the developer console
+ *    (controlled by the `logLevel` setting).
+ *
+ * Actual file I/O (reading/appending the JSONL file) is handled by
+ * commands.ts via Obsidian's vault API. This module is pure formatting.
  */
 
 import type { ActivityLogEntry, LogLevel } from "./types";

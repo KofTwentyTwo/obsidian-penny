@@ -2,6 +2,10 @@
  * PENNY - Shared Utilities
  *
  * Common utility functions used across multiple modules.
+ * Currently provides glob matching for chapter file pattern detection.
+ *
+ * Used by: statusbar.ts, commands.ts, main.ts to check whether a file
+ * matches the user's configured chapterFilePattern.
  */
 
 /**

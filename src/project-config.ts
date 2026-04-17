@@ -3,15 +3,25 @@
  *
  * Reads PENNY.md files from the project directory tree to provide
  * per-project setting overrides. Walks up from a chapter file's
- * directory looking for the nearest PENNY.md.
+ * directory looking for the nearest PENNY.md (like how .gitignore
+ * resolution works).
  *
- * Parsed key-value pairs from the `## Project` section override
- * global settings.
+ * A PENNY.md file can contain two sections:
+ * - `## Project`: key-value pairs that override PennySettings fields
+ *   (e.g. `drafts: my-drafts`, `context-budget: 500000`)
+ * - `## Voice Rules`: free-form text that overrides customVoiceRules
+ *
+ * Called by commands.ts before running the pipeline, so each book or
+ * series can have its own style guide paths, voice rules, etc.
  */
 
 import type { PennySettings } from "./types";
 
-/** Map of PENNY.md keys to PennySettings field names. */
+/**
+ * Map of PENNY.md key names (lowercase, kebab-case) to their corresponding
+ * PennySettings field names. Only these keys are recognized in the
+ * `## Project` section of a PENNY.md file.
+ */
 const KEY_MAP: Record<string, keyof PennySettings> = {
   "drafts": "draftsFolder",
   "style-guide": "styleGuide",
@@ -28,7 +38,8 @@ const KEY_MAP: Record<string, keyof PennySettings> = {
 
 /**
  * Minimal vault interface so this module has no direct Obsidian dependency.
- * The real Vault satisfies this shape.
+ * The real Obsidian Vault object satisfies this shape at runtime.
+ * In tests, a simple mock can be substituted.
  */
 export interface VaultReader {
   adapter: {
@@ -39,7 +50,11 @@ export interface VaultReader {
 
 /**
  * Walk up from a file's directory looking for a PENNY.md file.
- * Returns the parsed overrides or null if no PENNY.md is found.
+ * Checks each parent directory up to the vault root.
+ *
+ * @param filePath - Path of the chapter file being processed
+ * @param vault    - Vault reader for checking file existence and reading content
+ * @returns Parsed settings overrides, or null if no PENNY.md is found
  */
 export async function findProjectConfig(
   filePath: string,
@@ -81,8 +96,16 @@ export async function findProjectConfig(
 }
 
 /**
- * Parse the `## Project` section from a PENNY.md file.
- * Extracts simple `key: value` pairs and maps them to PennySettings fields.
+ * Parse a PENNY.md file into settings overrides.
+ *
+ * Extracts:
+ * - `## Project` section: simple `key: value` pairs mapped to PennySettings fields
+ * - `## Voice Rules` section: free-form text used as customVoiceRules
+ *
+ * HTML comments within the Voice Rules section are stripped.
+ *
+ * @param content - Full content of the PENNY.md file
+ * @returns Partial PennySettings with only the overridden fields
  */
 export function parseProjectConfig(content: string): Partial<PennySettings> {
   const overrides: Partial<PennySettings> = {};

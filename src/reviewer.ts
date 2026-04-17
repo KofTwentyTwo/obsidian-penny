@@ -2,6 +2,15 @@
  * PENNY - Review Note Generation
  *
  * Produces structured markdown review notes after a processing pass.
+ * Each review note summarizes what PENNY did: which annotations were
+ * processed, word count changes, voice compliance metrics, and any
+ * flags for author attention.
+ *
+ * Review files are written to: `{reviewsFolder}/{book}/{chapter}.v{N}-review.md`
+ *
+ * Called by pipeline.ts to generate the review content string.
+ * File I/O (creating the review file) is handled by commands.ts.
+ *
  * Pure function -- no side effects, no file I/O.
  */
 

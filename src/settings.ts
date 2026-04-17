@@ -336,7 +336,7 @@ export class PennySettingTab extends PluginSettingTab {
   private renderRouteRow(
     container: HTMLElement,
     label: string,
-    routeKey: "routeLight" | "routeStandard" | "routeHeavy",
+    routeKey: "routeLight" | "routeStandard" | "routeHeavy" | "routeResearch",
     providerNames: string[],
     mirrorAll = false,
   ): void {
@@ -1022,15 +1022,15 @@ export class PennySettingTab extends PluginSettingTab {
       { name: "PENNY: Initialize project", desc: "Scaffold a new novel project structure" },
       { name: "PENNY: Process this chapter", desc: "Process annotations in the active chapter (Cmd/Ctrl+Shift+P)" },
       { name: "PENNY: Process all chapters", desc: "Process all annotated chapters in the current book" },
-      { name: "PENNY: Dry run", desc: "Show what would change without processing" },
+      { name: "PENNY: Dry run", desc: "Show what would change without processing (Cmd/Ctrl+Shift+D)" },
       { name: "PENNY: Migrate chapters", desc: "Convert flat chapter files to versioned folders" },
-      { name: "PENNY: Show status", desc: "Show annotation counts and version info" },
+      { name: "PENNY: Show status", desc: "Show annotation counts and version info (Cmd/Ctrl+Shift+S)" },
       { name: "PENNY: New chapter", desc: "Create a new chapter from template" },
       { name: "PENNY: New character", desc: "Create a new character from template" },
       { name: "PENNY: Commit progress", desc: "Git commit with auto-generated message" },
       { name: "PENNY: Push", desc: "Git push to remote" },
       { name: "PENNY: Commit and push", desc: "Both in one action" },
-      { name: "PENNY: Do research", desc: "Research a topic and save to research folder" },
+      { name: "PENNY: Do research", desc: "Research a topic and save to research folder (Cmd/Ctrl+Shift+R)" },
     ];
 
     const table = details.createEl("table", { cls: "penny-commands-table" });

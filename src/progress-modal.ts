@@ -1,9 +1,20 @@
 /**
  * PENNY - Progress Modal
  *
- * Displays real-time progress during annotation processing.
- * Shows a scrollable log of each annotation as it is processed,
- * with status indicators and a cancel/close button.
+ * Obsidian Modal subclass that displays real-time progress during
+ * annotation processing. Shows a scrollable log of each annotation
+ * as it is processed, with status indicators (spinner -> done/error),
+ * a live elapsed timer, and Cancel/Minimize/Close buttons.
+ *
+ * Lifecycle:
+ * - Created and opened by commands.ts before calling runPipeline()
+ * - Updated by the pipeline's onProgress callback with ProgressEvents
+ * - User can minimize (processing continues, status shown via Notices)
+ * - User can cancel (pipeline checks isCancelled() before each annotation)
+ * - Automatically transitions to "complete" state when pipeline finishes
+ *
+ * Uses Obsidian's Modal API for rendering. CSS classes are prefixed
+ * with `penny-` (styles defined in styles.css).
  */
 
 import { Modal, App, Notice } from "obsidian";

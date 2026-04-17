@@ -85,21 +85,28 @@ export function planMigration(files: string[]): MigrationPlan[] {
 
 /**
  * Generate the v1 content from the original file.
- * The content stays the same -- this is a straight copy.
+ * The content stays the same -- this is a straight copy (identity function).
+ *
+ * @param originalContent - Raw content of the flat chapter file
+ * @returns The same content, unchanged
  */
 export function generateV1Content(originalContent: string): string {
   return originalContent;
 }
 
 /**
- * Generate the initial .version file content.
+ * Generate the initial `.version` file content.
+ *
+ * @returns The string "1" (first version)
  */
 export function generateVersionFile(): string {
   return "1";
 }
 
 /**
- * Generate the initial .state.json file content.
+ * Generate the initial `.state.json` file content.
+ *
+ * @returns Pretty-printed JSON for a fresh VersionState (version 1, no processed annotations)
  */
 export function generateStateJson(): string {
   const initialState: VersionState = {
