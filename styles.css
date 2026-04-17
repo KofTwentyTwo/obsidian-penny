@@ -482,7 +482,7 @@
 }
 
 .penny-error-box {
-  background: var(--background-modifier-error, rgba(255, 0, 0, 0.05));
+  background: var(--background-secondary);
   border: 1px solid var(--text-error, #e74c3c);
   border-radius: 6px;
   padding: 12px 16px;
@@ -490,7 +490,7 @@
 }
 
 .penny-error-message {
-  color: var(--text-error, #e74c3c);
+  color: var(--text-normal);
   font-weight: 500;
   margin: 0;
 }
