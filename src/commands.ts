@@ -17,6 +17,7 @@ import { getReviewFilePath } from "./reviewer";
 import { getLogFilePath } from "./logger";
 import { runPipeline } from "./pipeline";
 import type { PipelineResult } from "./pipeline";
+import { showPennyError } from "./error-modal";
 import { PennyProgressModal } from "./progress-modal";
 import { globMatch } from "./utils";
 import { readVersion, nextVersion } from "./versioner";
@@ -175,6 +176,15 @@ export function registerCommands(plugin: PennyPlugin): void {
     callback: async () => {
       await gitCommit(plugin);
       await gitPush(plugin);
+    },
+  });
+
+  // -- Research ------------------------------------------------------------
+  plugin.addCommand({
+    id: "penny:research",
+    name: "Do research",
+    callback: () => {
+      new ResearchModal(plugin).open();
     },
   });
 }
@@ -600,8 +610,14 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack ?? "" : "";
     if (modal) modal.close();
-    new Notice(`PENNY: Error processing ${file.basename} -- ${message}`);
+    const logFolder = normalizePath(plugin.settings.activityLogFolder);
+    showPennyError(plugin.app,
+      `Error processing ${file.basename}: ${message}`,
+      stack,
+      `${logFolder}/activity.jsonl`
+    );
     return null;
   } finally {
     plugin.statusBar?.setReady();
@@ -1842,4 +1858,191 @@ export class ProjectInitModal extends Modal {
   onClose(): void {
     this.contentEl.empty();
   }
+}
+
+// ============================================================================
+// Research Command
+// ============================================================================
+
+/**
+ * Modal for entering a research query. The user types a question or topic,
+ * PENNY sends it to the LLM, and writes the result to the research folder
+ * organized by topic.
+ */
+class ResearchModal extends Modal {
+  private plugin: PennyPlugin;
+  private queryEl!: HTMLTextAreaElement;
+
+  constructor(plugin: PennyPlugin) {
+    super(plugin.app);
+    this.plugin = plugin;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h3", { text: "PENNY Research" });
+    contentEl.createEl("p", {
+      text: "Ask PENNY to research a topic for your novel. Results are saved to your research folder, organized by topic.",
+      cls: "setting-item-description",
+    });
+
+    const textArea = contentEl.createEl("textarea", {
+      attr: {
+        placeholder: "e.g., According to James Hoffmann, with a dark espresso bean, what is the correct amounts of coffee and water for a double shot?",
+        rows: "4",
+      },
+    });
+    textArea.style.width = "100%";
+    textArea.style.marginBottom = "12px";
+    textArea.style.fontFamily = "var(--font-interface)";
+    textArea.style.fontSize = "0.95em";
+    this.queryEl = textArea;
+
+    const buttonRow = contentEl.createEl("div", { cls: "penny-progress-buttons" });
+    const researchBtn = buttonRow.createEl("button", { text: "Research" });
+    researchBtn.addEventListener("click", async () => {
+      const query = this.queryEl.value.trim();
+      if (!query) {
+        new Notice("PENNY: Please enter a research question.");
+        return;
+      }
+      researchBtn.disabled = true;
+      researchBtn.setText("Researching...");
+      try {
+        await executeResearch(this.plugin, query);
+        this.close();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        new Notice(`PENNY: Research failed -- ${msg}`, 6000);
+        researchBtn.disabled = false;
+        researchBtn.setText("Research");
+      }
+    });
+
+    const cancelBtn = buttonRow.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+
+    // Focus the textarea
+    setTimeout(() => textArea.focus(), 50);
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * Execute a research query: call the LLM, determine the topic/filename,
+ * and write the result to the research folder.
+ */
+async function executeResearch(plugin: PennyPlugin, query: string): Promise<void> {
+  const s = plugin.settings;
+  const researchFolder = normalizePath(s.researchFolder || "06-reference/research");
+
+  // Use the standard route for research (balanced cost/quality)
+  const route = s.routeStandard;
+  const provider = plugin.providerRegistry.get(route.provider);
+  if (!provider) {
+    throw new Error(`Provider "${route.provider}" not available. Check your settings.`);
+  }
+
+  // Step 1: Ask the LLM to research AND suggest a topic/filename
+  const systemPrompt = `You are PENNY, a research assistant for a novel-writing project. The author needs factual research to inform their fiction writing.
+
+Your task:
+1. Research the topic thoroughly and provide a detailed, factual answer.
+2. At the very end of your response, on its own line, write the topic category and filename in this exact format:
+   TOPIC: Category Name
+   FILENAME: descriptive-filename.md
+
+For example:
+   TOPIC: Coffee
+   FILENAME: espresso-brewing-ratios.md
+
+Or:
+   TOPIC: Physics
+   FILENAME: speed-of-light-as-constant.md
+
+Rules:
+- Be thorough and factual. Cite specific sources, experts, or references where possible.
+- Write in a clear, informative style suitable for reference notes.
+- The TOPIC should be a broad category (1-3 words).
+- The FILENAME should be descriptive and use kebab-case.
+- Include relevant numbers, measurements, and specifics.`;
+
+  const response = await provider.complete({
+    systemPrompt,
+    userPrompt: query,
+    model: route.model === "auto-latest" ? "claude-sonnet-4-6" : route.model,
+    maxTokens: s.maxTokens ?? 16000,
+  });
+
+  const text = response.text;
+
+  // Step 2: Extract topic and filename from the response
+  const topicMatch = text.match(/TOPIC:\s*(.+)/i);
+  const filenameMatch = text.match(/FILENAME:\s*(.+)/i);
+
+  const topic = topicMatch ? topicMatch[1].trim() : "General";
+  let filename = filenameMatch ? filenameMatch[1].trim() : slugify(query.slice(0, 60)) + ".md";
+  if (!filename.endsWith(".md")) filename += ".md";
+
+  // Remove the TOPIC/FILENAME lines from the content
+  const content = text
+    .replace(/TOPIC:\s*.+/i, "")
+    .replace(/FILENAME:\s*.+/i, "")
+    .trim();
+
+  // Step 3: Build the file path: researchFolder/Topic/filename.md
+  const topicFolder = `${researchFolder}/${topic}`;
+  const filePath = `${topicFolder}/${filename}`;
+
+  // Step 4: Check if file already exists -- if so, append/update
+  await ensureFolder(plugin, topicFolder);
+
+  const existingFile = plugin.app.vault.getAbstractFileByPath(filePath);
+  if (existingFile && existingFile instanceof TFile) {
+    // File exists -- append the new research
+    const existing = await plugin.app.vault.read(existingFile);
+    const updated = existing + "\n\n---\n\n## Updated Research\n\n**Query:** " + query + "\n\n" + content;
+    await plugin.app.vault.modify(existingFile, updated);
+    new Notice(`PENNY: Research updated in ${topic}/${filename}`, 6000);
+  } else {
+    // Create new file
+    const fileContent = `---
+type: research
+topic: "${topic}"
+query: "${query.replace(/"/g, '\\"')}"
+date: ${new Date().toISOString().split("T")[0]}
+---
+
+# ${topic}: ${filename.replace(/\.md$/, "").replace(/-/g, " ")}
+
+**Research query:** ${query}
+
+---
+
+${content}
+`;
+    await plugin.app.vault.create(filePath, fileContent);
+    new Notice(`PENNY: Research saved to ${topic}/${filename}`, 6000);
+  }
+
+  // Open the file
+  const newFile = plugin.app.vault.getAbstractFileByPath(filePath);
+  if (newFile && newFile instanceof TFile) {
+    await plugin.app.workspace.getLeaf("tab").openFile(newFile);
+  }
+}
+
+/** Convert a string to a kebab-case filename slug */
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 60);
 }

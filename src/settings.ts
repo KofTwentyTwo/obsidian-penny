@@ -522,6 +522,12 @@ export class PennySettingTab extends PluginSettingTab {
         placeholder: "07-reviews",
       },
       {
+        key: "researchFolder",
+        name: "Research folder",
+        desc: "Where PENNY saves research notes, organized by topic subfolder.",
+        placeholder: "06-reference/research",
+      },
+      {
         key: "activityLogFolder",
         name: "Activity log folder",
         desc: "Where PENNY writes JSONL activity logs.",
@@ -1023,6 +1029,7 @@ export class PennySettingTab extends PluginSettingTab {
       { name: "PENNY: Commit progress", desc: "Git commit with auto-generated message" },
       { name: "PENNY: Push", desc: "Git push to remote" },
       { name: "PENNY: Commit and push", desc: "Both in one action" },
+      { name: "PENNY: Do research", desc: "Research a topic and save to research folder" },
     ];
 
     const table = details.createEl("table", { cls: "penny-commands-table" });

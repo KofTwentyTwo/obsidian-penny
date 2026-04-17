@@ -280,6 +280,52 @@
   color: var(--text-error, #e74c3c);
 }
 
+/* Error modal */
+.penny-error-modal {
+  min-width: 450px;
+}
+
+.penny-error-box {
+  background: var(--background-modifier-error, rgba(255, 0, 0, 0.05));
+  border: 1px solid var(--text-error, #e74c3c);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 12px 0;
+}
+
+.penny-error-message {
+  color: var(--text-error, #e74c3c);
+  font-weight: 500;
+  margin: 0;
+}
+
+.penny-error-details {
+  margin: 12px 0;
+}
+
+.penny-error-details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.penny-error-details pre {
+  background: var(--background-secondary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.penny-error-log-path {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}
+
 .penny-progress-buttons {
   display: flex;
   justify-content: flex-end;

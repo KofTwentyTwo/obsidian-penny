@@ -48,6 +48,9 @@ export interface PennySettings {
   chapterFilePattern: string;
   proseMarker: string;
 
+  // Research
+  researchFolder: string;
+
   // Progress & Notifications
   showProgressModal: boolean;
   showStatusNotices: boolean;
@@ -156,6 +159,8 @@ export const DEFAULT_SETTINGS: PennySettings = {
   verboseLogging: false,
   chapterFilePattern: "ch-*.md",
   proseMarker: "<!-- Prose begins below -->",
+
+  researchFolder: "06-reference/research",
 
   showProgressModal: true,
   showStatusNotices: true,
