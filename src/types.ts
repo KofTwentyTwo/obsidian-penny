@@ -47,6 +47,10 @@ export interface PennySettings {
   ollamaEndpoint: string;
   /** Optional API key for authenticated Ollama instances (e.g. remote hosted). */
   ollamaApiKey: string;
+  /** Google Gemini API key (stored locally, never transmitted except to Google). */
+  googleApiKey: string;
+  /** OpenAI API key (stored locally, never transmitted except to OpenAI). */
+  openaiApiKey: string;
 
   // Model routing
   /** Model route for lightweight tasks (CUT, PACING). */
@@ -113,6 +117,14 @@ export interface PennySettings {
   showProgressModal: boolean;
   /** Show Obsidian Notice popups for status updates (used when modal is minimized). */
   showStatusNotices: boolean;
+
+  // UI
+  /** Show PENNY ribbon icon (pen icon in left sidebar). */
+  showRibbonIcon: boolean;
+  /** Show PENNY items in the editor right-click context menu. */
+  showContextMenu: boolean;
+  /** Show PENNY status in the bottom status bar. */
+  showStatusBar: boolean;
 
   // Git
   /** Stage and commit changes automatically after PENNY processes annotations. */
@@ -222,6 +234,8 @@ export const DEFAULT_SETTINGS: PennySettings = {
   anthropicApiKey: "",
   ollamaEndpoint: "http://localhost:11434",
   ollamaApiKey: "",
+  googleApiKey: "",
+  openaiApiKey: "",
 
   // "auto-latest" resolves at runtime to the best model for each tier.
   // See resolveModel() in providers/router.ts.
@@ -257,6 +271,10 @@ export const DEFAULT_SETTINGS: PennySettings = {
 
   showProgressModal: true,
   showStatusNotices: true,
+
+  showRibbonIcon: true,
+  showContextMenu: true,
+  showStatusBar: true,
 
   autoCommitAfterProcessing: false,
   autoPushAfterCommit: false,

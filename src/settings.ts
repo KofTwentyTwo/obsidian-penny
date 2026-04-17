@@ -23,6 +23,8 @@ import { DEFAULT_SYSTEM_PROMPT } from "./types";
 import type { LogLevel, PennySettings } from "./types";
 import { showPennyError } from "./error-modal";
 import { ANTHROPIC_MODELS } from "./providers/anthropic";
+import { GOOGLE_MODELS } from "./providers/google";
+import { OPENAI_MODELS } from "./providers/openai";
 import { resolveModel } from "./providers/router";
 
 /**
@@ -80,6 +82,7 @@ export class PennySettingTab extends PluginSettingTab {
     this.renderProjectStructureSection(containerEl);
     this.renderVoiceSection(containerEl);
     this.renderBehaviorSection(containerEl);
+    this.renderUISection(containerEl);
     this.renderGitSection(containerEl);
     this.renderCompanionPluginsSection(containerEl);
     this.renderHelpSection(containerEl);
@@ -248,6 +251,130 @@ export class PennySettingTab extends PluginSettingTab {
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             showPennyError(this.app, "Ollama test failed", msg);
+          } finally {
+            button.setButtonText("Test Connection");
+            button.setDisabled(false);
+          }
+        })
+      );
+
+    // -- Google Gemini --
+    details.createEl("h4", { text: "Google Gemini" });
+
+    new Setting(details)
+      .setName("Google API key")
+      .setDesc(
+        "Your Google Gemini API key. Get one at aistudio.google.com. Stored locally in plugin data."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("AIza...")
+          .setValue(this.plugin.settings.googleApiKey)
+          .then((t) => {
+            t.inputEl.type = "password";
+            t.inputEl.style.width = "300px";
+          })
+          .onChange(async (value) => {
+            this.plugin.settings.googleApiKey = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Google models -- show static list
+    new Setting(details)
+      .setName("Available Gemini models")
+      .setDesc("Models available for use with Google Gemini.");
+    const googleModelListEl = details.createEl("div", { cls: "penny-model-list" });
+    this.loadGoogleModels(googleModelListEl);
+
+    new Setting(details)
+      .setName("Test Google connection")
+      .setDesc("Verify that your API key is valid.")
+      .addButton((button) =>
+        button.setButtonText("Test Connection").onClick(async () => {
+          button.setButtonText("Testing...");
+          button.setDisabled(true);
+          try {
+            const provider = this.plugin.providerRegistry.get("google");
+            if (!provider) throw new Error("Google provider not registered");
+            const result = await provider.testConnection({
+              apiKey: this.plugin.settings.googleApiKey,
+            });
+            if (result) {
+              showPennyError(this.app,
+                "Google connection failed",
+                result);
+            } else {
+              new Notice(
+                "PENNY: Google Gemini connection OK.",
+                4000,
+              );
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            showPennyError(this.app, "Google Gemini test failed", msg);
+          } finally {
+            button.setButtonText("Test Connection");
+            button.setDisabled(false);
+          }
+        })
+      );
+
+    // -- OpenAI --
+    details.createEl("h4", { text: "OpenAI" });
+
+    new Setting(details)
+      .setName("OpenAI API key")
+      .setDesc(
+        "Your OpenAI API key. Get one at platform.openai.com. Stored locally in plugin data."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("sk-...")
+          .setValue(this.plugin.settings.openaiApiKey)
+          .then((t) => {
+            t.inputEl.type = "password";
+            t.inputEl.style.width = "300px";
+          })
+          .onChange(async (value) => {
+            this.plugin.settings.openaiApiKey = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // OpenAI models -- show static list
+    new Setting(details)
+      .setName("Available OpenAI models")
+      .setDesc("Models available for use with OpenAI.");
+    const openaiModelListEl = details.createEl("div", { cls: "penny-model-list" });
+    this.loadOpenAIModels(openaiModelListEl);
+
+    new Setting(details)
+      .setName("Test OpenAI connection")
+      .setDesc("Verify that your API key is valid.")
+      .addButton((button) =>
+        button.setButtonText("Test Connection").onClick(async () => {
+          button.setButtonText("Testing...");
+          button.setDisabled(true);
+          try {
+            const provider = this.plugin.providerRegistry.get("openai");
+            if (!provider) throw new Error("OpenAI provider not registered");
+            const result = await provider.testConnection({
+              apiKey: this.plugin.settings.openaiApiKey,
+            });
+            if (result) {
+              showPennyError(this.app,
+                "OpenAI connection failed",
+                result);
+            } else {
+              new Notice(
+                "PENNY: OpenAI connection OK.",
+                4000,
+              );
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            showPennyError(this.app, "OpenAI test failed", msg);
           } finally {
             button.setButtonText("Test Connection");
             button.setDisabled(false);
@@ -845,6 +972,42 @@ export class PennySettingTab extends PluginSettingTab {
     }
   }
 
+  /**
+   * Display Google Gemini models (static catalog) in the given container element.
+   */
+  private async loadGoogleModels(containerEl: HTMLElement): Promise<void> {
+    containerEl.empty();
+    for (const m of GOOGLE_MODELS) {
+      const row = containerEl.createEl("div", { cls: "penny-model-row" });
+      row.createEl("span", { text: m.name, cls: "penny-model-name" });
+      row.createEl("span", { text: ` (${m.id})` });
+      if (m.contextWindow) {
+        row.createEl("span", {
+          text: ` -- ${(m.contextWindow / 1000).toFixed(0)}K context`,
+          cls: "penny-model-meta",
+        });
+      }
+    }
+  }
+
+  /**
+   * Display OpenAI models (static catalog) in the given container element.
+   */
+  private async loadOpenAIModels(containerEl: HTMLElement): Promise<void> {
+    containerEl.empty();
+    for (const m of OPENAI_MODELS) {
+      const row = containerEl.createEl("div", { cls: "penny-model-row" });
+      row.createEl("span", { text: m.name, cls: "penny-model-name" });
+      row.createEl("span", { text: ` (${m.id})` });
+      if (m.contextWindow) {
+        row.createEl("span", {
+          text: ` -- ${(m.contextWindow / 1000).toFixed(0)}K context`,
+          cls: "penny-model-meta",
+        });
+      }
+    }
+  }
+
   private async detectProjectStructure(): Promise<void> {
     const vault = this.plugin.app.vault;
     const allFolders = vault.getAllLoadedFiles().filter((f) => f instanceof TFolder) as TFolder[];
@@ -970,6 +1133,54 @@ export class PennySettingTab extends PluginSettingTab {
       `PENNY: Path Validation\n${summary}\n\n${results.join("\n")}`,
       12000,
     );
+  }
+
+  /**
+   * UI Options -- toggle ribbon icon, context menu, status bar.
+   */
+  private renderUISection(containerEl: HTMLElement): void {
+    const details = containerEl.createEl("details");
+    details.createEl("summary", { text: "UI Options" });
+    details.createEl("p", {
+      text: "Control which PENNY interface elements are visible. Commands are always available via the command palette (Cmd/Ctrl+P) regardless of these settings.",
+      cls: "setting-item-description",
+    });
+
+    new Setting(details)
+      .setName("Ribbon icon")
+      .setDesc("Show the PENNY pen icon in the left sidebar. Click it to open the command menu.")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showRibbonIcon)
+          .onChange(async (value) => {
+            this.plugin.settings.showRibbonIcon = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(details)
+      .setName("Right-click context menu")
+      .setDesc("Add PENNY commands (Process, Dry run, Status, Research) to the editor right-click menu.")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showContextMenu)
+          .onChange(async (value) => {
+            this.plugin.settings.showContextMenu = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(details)
+      .setName("Status bar")
+      .setDesc("Show annotation count and chapter info in the bottom status bar.")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showStatusBar)
+          .onChange(async (value) => {
+            this.plugin.settings.showStatusBar = value;
+            await this.plugin.saveSettings();
+          })
+      );
   }
 
   /**

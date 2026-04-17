@@ -53,7 +53,7 @@ function normalizePath(p: string): string {
 export function registerCommands(plugin: PennyPlugin): void {
   // -- Initialize project ------------------------------------------------
   plugin.addCommand({
-    id: "penny:init",
+    id: "init",
     name: "Initialize project",
     callback: () => {
       new ProjectInitModal(plugin).open();
@@ -62,7 +62,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- Process this chapter ----------------------------------------------
   plugin.addCommand({
-    id: "penny:process-chapter",
+    id: "process-chapter",
     name: "Process this chapter",
     hotkeys: [{ modifiers: ["Mod", "Shift"], key: "p" }],
     checkCallback: (checking: boolean) => {
@@ -78,7 +78,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- Process all chapters ----------------------------------------------
   plugin.addCommand({
-    id: "penny:process-all",
+    id: "process-all",
     name: "Process all chapters",
     callback: async () => {
       if (!requireProvider(plugin)) return;
@@ -116,7 +116,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- Dry run -----------------------------------------------------------
   plugin.addCommand({
-    id: "penny:dry-run",
+    id: "dry-run",
     name: "Dry run",
     hotkeys: [{ modifiers: ["Mod", "Shift"], key: "d" }],
     checkCallback: (checking: boolean) => {
@@ -131,7 +131,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- Migrate chapters --------------------------------------------------
   plugin.addCommand({
-    id: "penny:migrate",
+    id: "migrate",
     name: "Migrate chapters",
     callback: () => {
       migrateChapters(plugin);
@@ -140,7 +140,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- Show status -------------------------------------------------------
   plugin.addCommand({
-    id: "penny:status",
+    id: "status",
     name: "Show status",
     hotkeys: [{ modifiers: ["Mod", "Shift"], key: "s" }],
     checkCallback: (checking: boolean) => {
@@ -155,7 +155,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- New chapter -------------------------------------------------------
   plugin.addCommand({
-    id: "penny:new-chapter",
+    id: "new-chapter",
     name: "New chapter",
     callback: () => {
       createNewChapter(plugin);
@@ -164,7 +164,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- New character -----------------------------------------------------
   plugin.addCommand({
-    id: "penny:new-character",
+    id: "new-character",
     name: "New character",
     callback: () => {
       createNewCharacter(plugin);
@@ -173,7 +173,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- Git commit --------------------------------------------------------
   plugin.addCommand({
-    id: "penny:git-commit",
+    id: "git-commit",
     name: "Commit progress",
     callback: () => {
       gitCommit(plugin);
@@ -182,7 +182,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- Git push ----------------------------------------------------------
   plugin.addCommand({
-    id: "penny:git-push",
+    id: "git-push",
     name: "Push",
     callback: () => {
       gitPush(plugin);
@@ -191,7 +191,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- Git commit and push -----------------------------------------------
   plugin.addCommand({
-    id: "penny:git-commit-push",
+    id: "git-commit-push",
     name: "Commit and push",
     callback: async () => {
       await gitCommit(plugin);
@@ -201,7 +201,7 @@ export function registerCommands(plugin: PennyPlugin): void {
 
   // -- Research ------------------------------------------------------------
   plugin.addCommand({
-    id: "penny:research",
+    id: "research",
     name: "Do research",
     hotkeys: [{ modifiers: ["Mod", "Shift"], key: "r" }],
     callback: () => {
@@ -259,6 +259,20 @@ export function requireProvider(plugin: PennyPlugin): boolean {
         showPennyError(plugin.app,
           `Route ${tierLabel} uses Ollama but no endpoint is configured.`,
           "Open Settings > PENNY > Providers to configure the Ollama endpoint.");
+        return false;
+      }
+    } else if (provider === "google") {
+      if (!s.googleApiKey) {
+        showPennyError(plugin.app,
+          `Route ${tierLabel} uses Google Gemini but no API key is set.`,
+          "Open Settings > PENNY > Providers to configure your Google API key.");
+        return false;
+      }
+    } else if (provider === "openai") {
+      if (!s.openaiApiKey) {
+        showPennyError(plugin.app,
+          `Route ${tierLabel} uses OpenAI but no API key is set.`,
+          "Open Settings > PENNY > Providers to configure your OpenAI API key.");
         return false;
       }
     } else {
@@ -2019,6 +2033,8 @@ Rules:
     maxTokens: s.maxTokens ?? 16000,
     apiKey: route.provider === "anthropic" ? s.anthropicApiKey
           : route.provider === "ollama" ? (s.ollamaApiKey || undefined)
+          : route.provider === "google" ? s.googleApiKey
+          : route.provider === "openai" ? s.openaiApiKey
           : undefined,
     endpoint: route.provider === "ollama" ? s.ollamaEndpoint : undefined,
   });

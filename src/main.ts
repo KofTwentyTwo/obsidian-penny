@@ -58,6 +58,15 @@ export default class PennyPlugin extends Plugin {
   /** Status bar widget instance */
   statusBar: PennyStatusBar | null = null;
 
+  /** Status bar container element, for show/hide */
+  private statusBarEl: HTMLElement | null = null;
+
+  /** Ribbon icon element, for removal on toggle */
+  private ribbonIconEl: HTMLElement | null = null;
+
+  /** Context menu event reference, for removal on toggle */
+  private contextMenuRef: ReturnType<typeof this.app.workspace.on> | null = null;
+
   /** Reference to the file-modify event, for cleanup */
   private saveEventRef: ReturnType<typeof this.app.vault.on> | null = null;
 
@@ -94,121 +103,8 @@ export default class PennyPlugin extends Plugin {
     // Register all commands
     registerCommands(this);
 
-    // Add status bar item
-    const statusBarEl = this.addStatusBarItem();
-    this.statusBar = new PennyStatusBar(statusBarEl);
-
-    // Add ribbon icon -- click to open the PENNY command menu
-    this.addRibbonIcon("pen-tool", "PENNY", (evt) => {
-      const menu = new Menu();
-
-      menu.addItem((item) =>
-        item
-          .setTitle("Process this chapter")
-          .setIcon("zap")
-          .onClick(() => executeCommand(this.app, "penny:process-chapter"))
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle("Process all chapters")
-          .setIcon("layers")
-          .onClick(() => executeCommand(this.app, "penny:process-all"))
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle("Dry run")
-          .setIcon("eye")
-          .onClick(() => executeCommand(this.app, "penny:dry-run"))
-      );
-      menu.addSeparator();
-      menu.addItem((item) =>
-        item
-          .setTitle("Do research")
-          .setIcon("search")
-          .onClick(() => executeCommand(this.app, "penny:research"))
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle("Show status")
-          .setIcon("info")
-          .onClick(() => executeCommand(this.app, "penny:status"))
-      );
-      menu.addSeparator();
-      menu.addItem((item) =>
-        item
-          .setTitle("New chapter")
-          .setIcon("file-plus")
-          .onClick(() => executeCommand(this.app, "penny:new-chapter"))
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle("New character")
-          .setIcon("user-plus")
-          .onClick(() => executeCommand(this.app, "penny:new-character"))
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle("Initialize project")
-          .setIcon("folder-plus")
-          .onClick(() => executeCommand(this.app, "penny:init"))
-      );
-      menu.addSeparator();
-      menu.addItem((item) =>
-        item
-          .setTitle("Migrate chapters")
-          .setIcon("folder-input")
-          .onClick(() => executeCommand(this.app, "penny:migrate"))
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle("Git commit")
-          .setIcon("git-commit-horizontal")
-          .onClick(() => executeCommand(this.app, "penny:git-commit"))
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle("Git push")
-          .setIcon("upload")
-          .onClick(() => executeCommand(this.app, "penny:git-push"))
-      );
-
-      menu.showAtMouseEvent(evt);
-    });
-
-    // Add right-click context menu items in the editor
-    this.registerEvent(
-      this.app.workspace.on("editor-menu", (menu) => {
-        menu.addSeparator();
-
-        menu.addItem((item) => {
-          item
-            .setTitle("PENNY: Process this chapter")
-            .setIcon("pen-tool")
-            .onClick(() => executeCommand(this.app, "penny:process-chapter"));
-        });
-
-        menu.addItem((item) => {
-          item
-            .setTitle("PENNY: Dry run")
-            .setIcon("eye")
-            .onClick(() => executeCommand(this.app, "penny:dry-run"));
-        });
-
-        menu.addItem((item) => {
-          item
-            .setTitle("PENNY: Show status")
-            .setIcon("info")
-            .onClick(() => executeCommand(this.app, "penny:status"));
-        });
-
-        menu.addItem((item) => {
-          item
-            .setTitle("PENNY: Do research")
-            .setIcon("search")
-            .onClick(() => executeCommand(this.app, "penny:research"));
-        });
-      })
-    );
+    // Set up togglable UI elements
+    this.setupUI();
 
     // Update status bar when the active file changes
     this.registerEvent(
@@ -224,7 +120,7 @@ export default class PennyPlugin extends Plugin {
     // Initial status bar update
     const activeFile = this.app.workspace.getActiveFile();
     if (activeFile) {
-      this.statusBar.update(activeFile, this);
+      this.statusBar?.update(activeFile, this);
     }
 
     // First-run notice if no provider is configured.
@@ -264,6 +160,9 @@ export default class PennyPlugin extends Plugin {
 
     // Re-configure the save hook in case autoProcessOnSave changed
     this.setupSaveHook();
+
+    // Re-configure UI elements in case toggles changed
+    this.setupUI();
   }
 
   /**
@@ -310,6 +209,104 @@ export default class PennyPlugin extends Plugin {
 
       this.debounceTimers.set(file.path, timer);
     });
+  }
+
+  /**
+   * Set up or tear down UI elements (ribbon, context menu, status bar)
+   * based on the current settings. Safe to call repeatedly.
+   */
+  private setupUI(): void {
+    // --- Ribbon icon ---
+    if (this.settings.showRibbonIcon) {
+      if (!this.ribbonIconEl) {
+        this.ribbonIconEl = this.addRibbonIcon("pen-tool", "PENNY", (evt) => {
+          this.showRibbonMenu(evt);
+        });
+      }
+    } else {
+      if (this.ribbonIconEl) {
+        this.ribbonIconEl.remove();
+        this.ribbonIconEl = null;
+      }
+    }
+
+    // --- Context menu ---
+    if (this.settings.showContextMenu) {
+      if (!this.contextMenuRef) {
+        this.contextMenuRef = this.app.workspace.on("editor-menu", (menu) => {
+          menu.addSeparator();
+          menu.addItem((item) => {
+            item.setTitle("PENNY: Process this chapter").setIcon("pen-tool")
+              .onClick(() => executeCommand(this.app, "penny:process-chapter"));
+          });
+          menu.addItem((item) => {
+            item.setTitle("PENNY: Dry run").setIcon("eye")
+              .onClick(() => executeCommand(this.app, "penny:dry-run"));
+          });
+          menu.addItem((item) => {
+            item.setTitle("PENNY: Show status").setIcon("info")
+              .onClick(() => executeCommand(this.app, "penny:status"));
+          });
+          menu.addItem((item) => {
+            item.setTitle("PENNY: Do research").setIcon("search")
+              .onClick(() => executeCommand(this.app, "penny:research"));
+          });
+        });
+        this.registerEvent(this.contextMenuRef);
+      }
+    } else {
+      if (this.contextMenuRef) {
+        this.app.workspace.offref(this.contextMenuRef);
+        this.contextMenuRef = null;
+      }
+    }
+
+    // --- Status bar ---
+    if (this.settings.showStatusBar) {
+      if (!this.statusBarEl) {
+        this.statusBarEl = this.addStatusBarItem();
+        this.statusBar = new PennyStatusBar(this.statusBarEl);
+      }
+    } else {
+      if (this.statusBarEl) {
+        this.statusBarEl.remove();
+        this.statusBarEl = null;
+        this.statusBar = null;
+      }
+    }
+  }
+
+  /**
+   * Show the ribbon dropdown menu with all PENNY commands.
+   */
+  private showRibbonMenu(evt: MouseEvent): void {
+    const menu = new Menu();
+    menu.addItem((item) => item.setTitle("Process this chapter").setIcon("zap")
+      .onClick(() => executeCommand(this.app, "penny:process-chapter")));
+    menu.addItem((item) => item.setTitle("Process all chapters").setIcon("layers")
+      .onClick(() => executeCommand(this.app, "penny:process-all")));
+    menu.addItem((item) => item.setTitle("Dry run").setIcon("eye")
+      .onClick(() => executeCommand(this.app, "penny:dry-run")));
+    menu.addSeparator();
+    menu.addItem((item) => item.setTitle("Do research").setIcon("search")
+      .onClick(() => executeCommand(this.app, "penny:research")));
+    menu.addItem((item) => item.setTitle("Show status").setIcon("info")
+      .onClick(() => executeCommand(this.app, "penny:status")));
+    menu.addSeparator();
+    menu.addItem((item) => item.setTitle("New chapter").setIcon("file-plus")
+      .onClick(() => executeCommand(this.app, "penny:new-chapter")));
+    menu.addItem((item) => item.setTitle("New character").setIcon("user-plus")
+      .onClick(() => executeCommand(this.app, "penny:new-character")));
+    menu.addItem((item) => item.setTitle("Initialize project").setIcon("folder-plus")
+      .onClick(() => executeCommand(this.app, "penny:init")));
+    menu.addSeparator();
+    menu.addItem((item) => item.setTitle("Migrate chapters").setIcon("folder-input")
+      .onClick(() => executeCommand(this.app, "penny:migrate")));
+    menu.addItem((item) => item.setTitle("Git commit").setIcon("git-commit-horizontal")
+      .onClick(() => executeCommand(this.app, "penny:git-commit")));
+    menu.addItem((item) => item.setTitle("Git push").setIcon("upload")
+      .onClick(() => executeCommand(this.app, "penny:git-push")));
+    menu.showAtMouseEvent(evt);
   }
 
   /**
