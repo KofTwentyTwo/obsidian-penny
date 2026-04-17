@@ -50,7 +50,7 @@ export interface PipelineProvider {
 
 /** Progress events emitted during pipeline execution. Consumed by PennyProgressModal. */
 export interface ProgressEvent {
-  type: "start" | "annotation-start" | "annotation-done" | "annotation-error" | "assembling" | "complete";
+  type: "start" | "annotation-start" | "annotation-done" | "annotation-error" | "assembling" | "complete" | "token";
   total?: number;
   current?: number;
   tag?: string;
@@ -60,6 +60,8 @@ export interface ProgressEvent {
   wordCount?: number;
   error?: string;
   message?: string;
+  /** Streaming token text (for type: "token"). */
+  text?: string;
 }
 
 /**
@@ -262,7 +264,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
       const tier: ComplexityTier = TAG_COMPLEXITY[annotation.tag] ?? "standard";
       const useThinking = tier === "heavy" && route.provider === "anthropic";
 
-      // Call provider
+      // Call provider (with streaming token callback when progress is available)
       const response = await callProvider(provider, {
         systemPrompt: system,
         userPrompt: user,
@@ -275,6 +277,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
               : undefined,
         endpoint: route.provider === "ollama" ? settings.ollamaEndpoint : undefined,
         useThinking,
+        onToken: onProgress ? (text: string) => {
+          onProgress({ type: "token", text, current: i + 1 });
+        } : undefined,
       });
 
       revisions.push({ annotation, revisedText: response.text });

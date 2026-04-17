@@ -24,6 +24,7 @@ export class PennyProgressModal extends Modal {
   private logEl!: HTMLElement;
   private headerEl!: HTMLElement;
   private timerEl!: HTMLElement;
+  private streamEl: HTMLElement | null = null;
   private cancelled = false;
   private minimized = false;
   private showStatusNotices: boolean;
@@ -107,16 +108,32 @@ export class PennyProgressModal extends Modal {
           cls: "penny-progress-line penny-progress-active",
         });
         line.dataset.index = String(event.current);
-        // Show spinner + message
         const spinner = line.createEl("span", { cls: "penny-inline-spinner" });
         spinner.setText("");
         line.createEl("span", { text: ` ${event.message ?? ""}` });
-        line.createEl("span", { text: " waiting for response...", cls: "penny-waiting-text" });
+
+        // Create streaming preview area for live LLM output
+        this.streamEl = this.logEl.createEl("div", { cls: "penny-stream-preview" });
+
         this.logEl.scrollTop = this.logEl.scrollHeight;
         break;
       }
 
+      case "token": {
+        // Append streaming text to the preview area
+        if (this.streamEl && event.text) {
+          this.streamEl.appendText(event.text);
+          this.logEl.scrollTop = this.logEl.scrollHeight;
+        }
+        break;
+      }
+
       case "annotation-done": {
+        // Remove the streaming preview
+        if (this.streamEl) {
+          this.streamEl.remove();
+          this.streamEl = null;
+        }
         const line = this.logEl.querySelector(
           `[data-index="${event.current}"]`,
         ) as HTMLElement | null;

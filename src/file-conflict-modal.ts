@@ -33,10 +33,10 @@ export class FileConflictModal extends Modal {
 
     contentEl.createEl("h3", { text: "File Already Exists" });
 
-    const messageBox = contentEl.createEl("div", { cls: "penny-error-box" });
+    const messageBox = contentEl.createEl("div", { cls: "penny-conflict-box" });
     messageBox.createEl("p", {
-      text: `File already exists: ${this.filePath}`,
-      cls: "penny-error-message",
+      text: this.filePath,
+      cls: "penny-conflict-path",
     });
     messageBox.createEl("p", {
       text: "How would you like to proceed?",

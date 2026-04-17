@@ -584,8 +584,9 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
 
     pennyLog("info", s.logLevel, `Pipeline complete: ${result.annotationsProcessed} processed, v${result.newVersion} (${result.durationMs}ms)`);
 
-    // Write new version file
-    const createdVersionFile = await safeCreateFile(plugin, newVersionPath, result.newContent);
+    // Write new version file (overwrite if exists -- version scan should prevent this,
+    // but handle edge cases like interrupted previous runs)
+    const createdVersionFile = await upsertFile(plugin, newVersionPath, result.newContent);
     if (!createdVersionFile) {
       if (modal) modal.close();
       return null;
@@ -610,7 +611,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     // Write review note (reviewPath pre-computed above)
     const reviewFolder = reviewPath.split("/").slice(0, -1).join("/");
     await ensureFolder(plugin, reviewFolder);
-    await safeCreateFile(plugin, reviewPath, result.reviewContent);
+    await upsertFile(plugin, reviewPath, result.reviewContent);
 
     // Append to activity log (logPath pre-computed above)
     const logFolder = logPath.split("/").slice(0, -1).join("/");
@@ -1226,6 +1227,20 @@ async function ensureFolder(plugin: PennyPlugin, path: string): Promise<void> {
       await plugin.app.vault.createFolder(current);
     }
   }
+}
+
+/**
+ * Create or overwrite a file. Uses vault.modify if the file exists, vault.create if not.
+ * Unlike safeCreateFile, this never shows a conflict dialog -- it silently overwrites.
+ * Used for version files, review notes, and other PENNY-managed output.
+ */
+async function upsertFile(plugin: PennyPlugin, path: string, content: string): Promise<TFile | null> {
+  const existing = plugin.app.vault.getAbstractFileByPath(path);
+  if (existing && existing instanceof TFile) {
+    await plugin.app.vault.modify(existing, content);
+    return existing;
+  }
+  return await plugin.app.vault.create(path, content);
 }
 
 /**

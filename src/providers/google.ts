@@ -70,6 +70,10 @@ export class GoogleProvider implements LLMService {
       throw new Error("Google API key is required");
     }
 
+    if (request.onToken && typeof globalThis.fetch === "function") {
+      return this.completeStreaming(request, apiKey);
+    }
+
     const body: Record<string, unknown> = {
       contents: [
         {
@@ -104,6 +108,72 @@ export class GoogleProvider implements LLMService {
     }
 
     return this.parseResponse(response.text, request.model);
+  }
+
+  private async completeStreaming(
+    request: CompletionRequest,
+    apiKey: string,
+  ): Promise<CompletionResponse> {
+    const body: Record<string, unknown> = {
+      contents: [{ role: "user", parts: [{ text: request.userPrompt }] }],
+      generationConfig: { maxOutputTokens: request.maxTokens },
+    };
+    if (request.systemPrompt) {
+      body.systemInstruction = { parts: [{ text: request.systemPrompt }] };
+    }
+
+    // Google uses streamGenerateContent with alt=sse for SSE streaming
+    const url = `${GOOGLE_API_BASE}/${request.model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      throw this.buildHttpError(resp.status, await resp.text());
+    }
+
+    const reader = resp.body?.getReader();
+    if (!reader) throw new Error("Streaming not supported");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const textParts: string[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        try {
+          const event = JSON.parse(data);
+          const parts = event.candidates?.[0]?.content?.parts;
+          if (Array.isArray(parts)) {
+            for (const part of parts) {
+              if (typeof part.text === "string") {
+                textParts.push(part.text);
+                request.onToken?.(part.text);
+              }
+            }
+          }
+        } catch { /* skip */ }
+      }
+    }
+
+    return {
+      text: textParts.join(""),
+      usage: {},
+      model: request.model,
+      provider: "google",
+    };
   }
 
   estimateTokens(text: string): number {

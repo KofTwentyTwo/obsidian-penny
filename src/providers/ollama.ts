@@ -99,6 +99,10 @@ export class OllamaProvider implements LLMService {
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     const endpoint = request.endpoint ?? DEFAULT_OLLAMA_ENDPOINT;
 
+    if (request.onToken && typeof globalThis.fetch === "function") {
+      return this.completeStreaming(request, endpoint);
+    }
+
     const body = {
       model: request.model,
       messages: [
@@ -137,6 +141,73 @@ export class OllamaProvider implements LLMService {
     }
 
     return this.parseResponse(response.text, request.model);
+  }
+
+  private async completeStreaming(
+    request: CompletionRequest,
+    endpoint: string,
+  ): Promise<CompletionResponse> {
+    const body = {
+      model: request.model,
+      messages: [
+        { role: "system", content: request.systemPrompt },
+        { role: "user", content: request.userPrompt },
+      ],
+      max_tokens: request.maxTokens,
+      stream: true,
+    };
+
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (request.apiKey) {
+      headers["Authorization"] = `Bearer ${request.apiKey}`;
+    }
+
+    const resp = await fetch(`${endpoint}/v1/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      throw this.buildHttpError(resp.status, await resp.text(), endpoint);
+    }
+
+    const reader = resp.body?.getReader();
+    if (!reader) throw new Error("Streaming not supported");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const textParts: string[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") continue;
+        try {
+          const event = JSON.parse(data);
+          const delta = event.choices?.[0]?.delta?.content;
+          if (typeof delta === "string") {
+            textParts.push(delta);
+            request.onToken?.(delta);
+          }
+        } catch { /* skip */ }
+      }
+    }
+
+    return {
+      text: textParts.join(""),
+      usage: {},
+      model: request.model,
+      provider: "ollama",
+    };
   }
 
   estimateTokens(text: string): number {

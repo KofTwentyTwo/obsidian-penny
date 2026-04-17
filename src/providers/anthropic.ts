@@ -85,6 +85,11 @@ export class AnthropicProvider implements LLMService {
       throw new Error("Anthropic API key is required");
     }
 
+    // When onToken is provided and fetch is available, use streaming
+    if (request.onToken && typeof globalThis.fetch === "function") {
+      return this.completeStreaming(request, apiKey);
+    }
+
     const body: Record<string, unknown> = {
       model: request.model,
       max_tokens: request.maxTokens,
@@ -94,8 +99,6 @@ export class AnthropicProvider implements LLMService {
       ],
     };
 
-    // Use adaptive thinking (recommended for Claude 4.6+).
-    // budget_tokens is deprecated on Opus 4.6 and Sonnet 4.6.
     const useThinking = request.useThinking === true && THINKING_CAPABLE.has(request.model);
     if (useThinking) {
       body.thinking = { type: "adaptive" };
@@ -107,7 +110,6 @@ export class AnthropicProvider implements LLMService {
       "content-type": "application/json",
     };
 
-    // Add the interleaved-thinking beta header when thinking is enabled
     if (useThinking) {
       headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
     }
@@ -124,6 +126,106 @@ export class AnthropicProvider implements LLMService {
     }
 
     return this.parseResponse(response.text, request.model);
+  }
+
+  /**
+   * Streaming completion using native fetch + SSE parsing.
+   * Calls request.onToken with each text delta as it arrives.
+   */
+  private async completeStreaming(
+    request: CompletionRequest,
+    apiKey: string,
+  ): Promise<CompletionResponse> {
+    const useThinking = request.useThinking === true && THINKING_CAPABLE.has(request.model);
+
+    const body: Record<string, unknown> = {
+      model: request.model,
+      max_tokens: request.maxTokens,
+      system: request.systemPrompt,
+      messages: [{ role: "user", content: request.userPrompt }],
+      stream: true,
+    };
+
+    if (useThinking) {
+      body.thinking = { type: "adaptive" };
+    }
+
+    const headers: Record<string, string> = {
+      "x-api-key": apiKey,
+      "anthropic-version": ANTHROPIC_VERSION,
+      "content-type": "application/json",
+    };
+
+    if (useThinking) {
+      headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
+    }
+
+    const resp = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw this.buildHttpError(resp.status, errText);
+    }
+
+    const reader = resp.body?.getReader();
+    if (!reader) throw new Error("Streaming not supported");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const textParts: string[] = [];
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE lines from buffer
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? ""; // Keep incomplete last line
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") continue;
+
+        try {
+          const event = JSON.parse(data);
+
+          // Text delta -- the main output
+          if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+            const text = event.delta.text;
+            textParts.push(text);
+            request.onToken?.(text);
+          }
+
+          // Usage from message_delta (final event)
+          if (event.type === "message_delta" && event.usage) {
+            outputTokens = event.usage.output_tokens ?? 0;
+          }
+
+          // Usage from message_start
+          if (event.type === "message_start" && event.message?.usage) {
+            inputTokens = event.message.usage.input_tokens ?? 0;
+          }
+        } catch {
+          // Skip unparseable lines
+        }
+      }
+    }
+
+    return {
+      text: textParts.join(""),
+      usage: { inputTokens, outputTokens },
+      model: request.model,
+      provider: "anthropic",
+    };
   }
 
   estimateTokens(text: string): number {

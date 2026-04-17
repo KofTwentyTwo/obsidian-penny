@@ -81,6 +81,10 @@ export class OpenAIProvider implements LLMService {
       throw new Error("OpenAI API key is required");
     }
 
+    if (request.onToken && typeof globalThis.fetch === "function") {
+      return this.completeStreaming(request, apiKey);
+    }
+
     const body: Record<string, unknown> = {
       model: request.model,
       messages: [
@@ -105,6 +109,68 @@ export class OpenAIProvider implements LLMService {
     }
 
     return this.parseResponse(response.text, request.model);
+  }
+
+  private async completeStreaming(
+    request: CompletionRequest,
+    apiKey: string,
+  ): Promise<CompletionResponse> {
+    const body = {
+      model: request.model,
+      messages: [
+        { role: "system", content: request.systemPrompt },
+        { role: "user", content: request.userPrompt },
+      ],
+      max_tokens: request.maxTokens,
+      stream: true,
+    };
+
+    const resp = await fetch(OPENAI_API_URL, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      throw this.buildHttpError(resp.status, await resp.text());
+    }
+
+    const reader = resp.body?.getReader();
+    if (!reader) throw new Error("Streaming not supported");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const textParts: string[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") continue;
+        try {
+          const event = JSON.parse(data);
+          const delta = event.choices?.[0]?.delta?.content;
+          if (typeof delta === "string") {
+            textParts.push(delta);
+            request.onToken?.(delta);
+          }
+        } catch { /* skip */ }
+      }
+    }
+
+    return {
+      text: textParts.join(""),
+      usage: {},
+      model: request.model,
+      provider: "openai",
+    };
   }
 
   estimateTokens(text: string): number {

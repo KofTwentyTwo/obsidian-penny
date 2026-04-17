@@ -77,6 +77,8 @@ export interface CompletionRequest {
   endpoint?: string;
   /** When true AND the model supports it, enable extended thinking. */
   useThinking?: boolean;
+  /** Called with each text chunk during streaming. When set, provider should use streaming API. */
+  onToken?: (text: string) => void;
 }
 
 /** Response from an LLM provider. The `text` field contains the revised prose. */
