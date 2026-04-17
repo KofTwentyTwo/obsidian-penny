@@ -1,7 +1,16 @@
 /**
  * PENNY - Version Management
  *
- * Manages .version manifest and .state.json files.
+ * Manages the `.version` manifest and `.state.json` files that live
+ * inside each chapter folder. These two files provide:
+ *
+ * - `.version`:     A plain integer -- the current version number.
+ * - `.state.json`:  A VersionState object tracking which annotations
+ *                   have been processed (by hash) to ensure idempotency.
+ *
+ * Called by pipeline.ts to read current state, filter already-processed
+ * annotations, and write updated state after a processing pass.
+ *
  * Pure functions -- no Obsidian API dependencies.
  */
 
@@ -9,7 +18,9 @@ import type { AnnotatedSection, VersionState, ProcessedAnnotation } from "./type
 
 /**
  * Read the current version number from .version file content.
- * Returns 0 if the content is empty or unparseable.
+ *
+ * @param versionContent - Raw text content of the `.version` file
+ * @returns The parsed version number, or 0 if empty/unparseable/negative
  */
 export function readVersion(versionContent: string): number {
   const trimmed = versionContent.trim();
@@ -18,15 +29,21 @@ export function readVersion(versionContent: string): number {
 }
 
 /**
- * Compute the next version number.
+ * Compute the next version number (simple increment).
+ *
+ * @param current - The current version number
+ * @returns current + 1
  */
 export function nextVersion(current: number): number {
   return current + 1;
 }
 
 /**
- * Parse .state.json content into a VersionState.
- * Returns a default state if the content is empty or invalid JSON.
+ * Parse `.state.json` content into a VersionState.
+ * Defensively validates every field to handle corrupted or hand-edited files.
+ *
+ * @param stateContent - Raw JSON string from the `.state.json` file
+ * @returns A valid VersionState (defaults to version 0 / empty history if parsing fails)
  */
 export function readState(stateContent: string): VersionState {
   const defaultState: VersionState = {
@@ -101,6 +118,13 @@ export function updateState(
  * Filter annotations to only those not yet processed (by hash).
  * This provides idempotency: running PENNY twice on the same chapter
  * with the same annotations will not re-process them.
+ *
+ * Also filters out passthrough tags (NOTE, RESEARCH) which are never
+ * sent to the LLM regardless of processing history.
+ *
+ * @param annotations - All parsed annotations from the chapter
+ * @param state       - Current version state with processing history
+ * @returns Only the actionable annotations whose hashes are not in state
  */
 export function shouldProcess(
   annotations: AnnotatedSection[],
@@ -111,7 +135,10 @@ export function shouldProcess(
 }
 
 /**
- * Serialize a VersionState to JSON for writing to .state.json.
+ * Serialize a VersionState to pretty-printed JSON for writing to `.state.json`.
+ *
+ * @param state - The version state to serialize
+ * @returns JSON string with 2-space indentation
  */
 export function serializeState(state: VersionState): string {
   return JSON.stringify(state, null, 2);

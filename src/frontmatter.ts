@@ -1,11 +1,20 @@
 /**
  * PENNY - YAML Frontmatter
  *
- * Parse and update chapter frontmatter.
- * Pure functions -- no Obsidian API dependencies.
+ * Parse, update, and serialize YAML frontmatter in chapter files.
+ * Called by pipeline.ts to read/update agent-managed fields, and by
+ * commands.ts for character detection and word counting.
  *
  * Uses a simple YAML subset parser (key: value pairs, arrays) rather than
  * pulling in a full YAML library, keeping the plugin dependency-free.
+ * Supports: strings, numbers, booleans, inline arrays `[a, b]`, and
+ * block arrays with `  - item` continuation lines.
+ *
+ * Key design choice: preserves original key order when re-serializing,
+ * so author-authored frontmatter fields stay in place and only agent-added
+ * fields are appended at the end.
+ *
+ * Pure functions -- no Obsidian API dependencies.
  */
 
 import type { ChapterFrontmatter } from "./types";
@@ -19,6 +28,12 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
  * Returns the parsed frontmatter object and the body text (everything after
  * the closing `---`).  If no frontmatter is found, returns an empty
  * frontmatter object and the full content as body.
+ *
+ * @param content  - Full file content including the `---` delimiters
+ * @returns An object with:
+ *   - `frontmatter`: Parsed key-value pairs
+ *   - `body`: Everything after the closing `---`
+ *   - `keyOrder`: Keys in the order they appeared (for round-trip fidelity)
  */
 export function parseFrontmatter(content: string): {
   frontmatter: ChapterFrontmatter;
@@ -97,6 +112,7 @@ export function parseFrontmatter(content: string): {
   return { frontmatter, body, keyOrder };
 }
 
+/** Parse a raw YAML value string into a typed JS value (string, number, or boolean). */
 function parseYamlValue(raw: string): string | number | boolean {
   // Remove surrounding quotes.
   if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
@@ -138,6 +154,12 @@ function quoteYamlValue(value: string): string {
 
 /**
  * Serialize frontmatter and body back into a markdown string.
+ *
+ * @param frontmatter - The frontmatter key-value pairs to serialize
+ * @param body        - The body text to append after the closing `---`
+ * @param keyOrder    - Optional key ordering from the original parse (for round-trip fidelity).
+ *                      Keys not in this list are appended after ordered keys.
+ * @returns Complete markdown string: `---\nfrontmatter\n---\nbody`
  */
 export function serializeFrontmatter(frontmatter: ChapterFrontmatter, body: string, keyOrder?: string[]): string {
   const yamlLines: string[] = [];
@@ -191,6 +213,10 @@ export function serializeFrontmatter(frontmatter: ChapterFrontmatter, body: stri
 /**
  * Update agent-managed fields on the frontmatter.
  * Returns a new object; does not mutate the input.
+ *
+ * @param frontmatter - The current frontmatter object
+ * @param updates     - Fields to merge (e.g. agent_version, wordcount, status)
+ * @returns A new ChapterFrontmatter with the updates applied
  */
 export function updateAgentFields(
   frontmatter: ChapterFrontmatter,

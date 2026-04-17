@@ -18,6 +18,7 @@ import { getLogFilePath, pennyLog } from "./logger";
 import { runPipeline } from "./pipeline";
 import type { PipelineResult } from "./pipeline";
 import { showPennyError } from "./error-modal";
+import { safeCreateFile } from "./file-conflict-modal";
 import { PennyProgressModal } from "./progress-modal";
 import { globMatch } from "./utils";
 import { readVersion, nextVersion } from "./versioner";
@@ -546,14 +547,18 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     pennyLog("info", s.logLevel, `Pipeline complete: ${result.annotationsProcessed} processed, v${result.newVersion} (${result.durationMs}ms)`);
 
     // Write new version file
-    await plugin.app.vault.create(newVersionPath, result.newContent);
+    const createdVersionFile = await safeCreateFile(plugin, newVersionPath, result.newContent);
+    if (!createdVersionFile) {
+      if (modal) modal.close();
+      return null;
+    }
 
     // Update .version file
     const versionFile = plugin.app.vault.getAbstractFileByPath(versionFilePath);
     if (versionFile && versionFile instanceof TFile) {
       await plugin.app.vault.modify(versionFile, String(result.newVersion));
     } else {
-      await plugin.app.vault.create(versionFilePath, String(result.newVersion));
+      await safeCreateFile(plugin, versionFilePath, String(result.newVersion));
     }
 
     // Update .state.json
@@ -561,13 +566,13 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
     if (stateFile && stateFile instanceof TFile) {
       await plugin.app.vault.modify(stateFile, result.stateJson);
     } else {
-      await plugin.app.vault.create(stateFilePath, result.stateJson);
+      await safeCreateFile(plugin, stateFilePath, result.stateJson);
     }
 
     // Write review note (reviewPath pre-computed above)
     const reviewFolder = reviewPath.split("/").slice(0, -1).join("/");
     await ensureFolder(plugin, reviewFolder);
-    await plugin.app.vault.create(reviewPath, result.reviewContent);
+    await safeCreateFile(plugin, reviewPath, result.reviewContent);
 
     // Append to activity log (logPath pre-computed above)
     const logFolder = logPath.split("/").slice(0, -1).join("/");
@@ -577,7 +582,7 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       const existing = await plugin.app.vault.read(existingLog);
       await plugin.app.vault.modify(existingLog, existing + result.logLine);
     } else {
-      await plugin.app.vault.create(logPath, result.logLine);
+      await safeCreateFile(plugin, logPath, result.logLine);
     }
 
     pennyLog("info", s.logLevel, `Version ${result.newVersion} created for ${chapterId}`);
@@ -744,30 +749,33 @@ async function migrateChapters(plugin: PennyPlugin): Promise<void> {
         await ensureFolder(plugin, chapterFolderPath);
 
         // Write versioned file
-        await plugin.app.vault.create(versionedFilePath, content);
-
-        // Verify the written file matches the original content
-        const versionedFile = plugin.app.vault.getAbstractFileByPath(versionedFilePath);
-        if (!versionedFile || !(versionedFile instanceof TFile)) {
-          showPennyError(plugin.app,
-            `Migration verification failed for ${bookChild.path}`,
-            "Versioned file not found after write. Original left intact.");
+        const versionedFile = await safeCreateFile(plugin, versionedFilePath, content);
+        if (!versionedFile) {
+          showPennyError(
+            plugin.app,
+            `Migration failed for ${bookChild.path}`,
+            "Could not create versioned file. Original left intact.",
+          );
           continue;
         }
+
+        // Verify the written file matches the original content
         const writtenContent = await plugin.app.vault.read(versionedFile);
         if (writtenContent !== content) {
-          showPennyError(plugin.app,
+          showPennyError(
+            plugin.app,
             `Migration verification failed for ${bookChild.path}`,
-            "Written content does not match original. Original left intact.");
+            "Written content does not match original. Original left intact.",
+          );
           continue;
         }
 
         // Write .version manifest
-        await plugin.app.vault.create(versionFilePath, "1");
+        await safeCreateFile(plugin, versionFilePath, "1");
 
         // Write .state.json
         const stateFilePath = `${chapterFolderPath}/.state.json`;
-        await plugin.app.vault.create(stateFilePath, generateStateJson());
+        await safeCreateFile(plugin, stateFilePath, generateStateJson());
 
         // Remove original flat file only after verified write
         await plugin.app.vault.delete(bookChild);
@@ -844,9 +852,10 @@ async function createNewChapter(plugin: PennyPlugin): Promise<void> {
 
   try {
     await ensureFolder(plugin, chapterFolderPath);
-    const newFile = await plugin.app.vault.create(filePath, content);
-    await plugin.app.vault.create(`${chapterFolderPath}/.version`, "1");
-    await plugin.app.vault.create(`${chapterFolderPath}/.state.json`, generateStateJson());
+    const newFile = await safeCreateFile(plugin, filePath, content);
+    if (!newFile) return;
+    await safeCreateFile(plugin, `${chapterFolderPath}/.version`, "1");
+    await safeCreateFile(plugin, `${chapterFolderPath}/.state.json`, generateStateJson());
 
     // Open the new file
     await plugin.app.workspace.getLeaf("tab").openFile(newFile);
@@ -863,9 +872,9 @@ async function createNewChapter(plugin: PennyPlugin): Promise<void> {
 async function createNewCharacter(plugin: PennyPlugin): Promise<void> {
   const charFolder = plugin.settings.characterSheetsFolder;
   if (!charFolder) {
-    new Notice(
-      "PENNY: Character sheets folder not configured. Set it in Settings > PENNY > Project Structure."
-    );
+    showPennyError(plugin.app,
+      "Character sheets folder not configured.",
+      "Set it in Settings > PENNY > Project Structure.");
     return;
   }
 
@@ -918,7 +927,7 @@ async function createNewCharacter(plugin: PennyPlugin): Promise<void> {
     new Notice("PENNY: Created new character file. Rename it to match the character.");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    new Notice(`PENNY: Failed to create character file -- ${message}`);
+    showPennyError(plugin.app, `Failed to create character file`, message);
   }
 }
 
@@ -977,7 +986,9 @@ function getVaultBasePath(plugin: PennyPlugin): string | null {
 async function verifyGitPrerequisites(plugin: PennyPlugin): Promise<string | null> {
   const vaultPath = getVaultBasePath(plugin);
   if (!vaultPath) {
-    new Notice("PENNY: Git operations require a local vault (not a sync adapter).");
+    showPennyError(plugin.app,
+      "Git operations require a local vault.",
+      "The vault adapter is not a local filesystem (sync adapter detected).");
     return null;
   }
 
@@ -985,7 +996,9 @@ async function verifyGitPrerequisites(plugin: PennyPlugin): Promise<string | nul
   try {
     await gitExecRaw(["--version"]);
   } catch {
-    new Notice("PENNY: Git is not installed or not on PATH.");
+    showPennyError(plugin.app,
+      "Git is not installed or not on PATH.",
+      "Install git and ensure it is available in your system PATH.");
     return null;
   }
 
@@ -993,11 +1006,15 @@ async function verifyGitPrerequisites(plugin: PennyPlugin): Promise<string | nul
   try {
     const result = await gitExecRaw(["-C", vaultPath, "rev-parse", "--is-inside-work-tree"]);
     if (result.trim() !== "true") {
-      new Notice("PENNY: This vault is not a git repository. Run 'git init' first.");
+      showPennyError(plugin.app,
+        "This vault is not a git repository.",
+        "Run 'git init' in the vault directory first.");
       return null;
     }
   } catch {
-    new Notice("PENNY: This vault is not a git repository. Run 'git init' first.");
+    showPennyError(plugin.app,
+      "This vault is not a git repository.",
+      "Run 'git init' in the vault directory first.");
     return null;
   }
 
@@ -1130,7 +1147,7 @@ async function gitCommit(plugin: PennyPlugin, ctx?: CommitContext): Promise<void
     new Notice(`PENNY: Committed. ${message}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    new Notice(`PENNY: Git commit failed -- ${message}`);
+    showPennyError(plugin.app, "Git commit failed", message);
   }
 }
 
@@ -1146,7 +1163,7 @@ async function gitPush(plugin: PennyPlugin): Promise<void> {
     new Notice("PENNY: Pushed to remote.");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    new Notice(`PENNY: Git push failed -- ${message}`);
+    showPennyError(plugin.app, "Git push failed", message);
   }
 }
 
@@ -1818,16 +1835,18 @@ export class ProjectInitModal extends Modal {
             this.options.projectName
           );
           if (existing) {
-            new Notice(
-              `PENNY: A folder named "${this.options.projectName}" already exists.`
-            );
+            showPennyError(this.plugin.app,
+              `A folder named "${this.options.projectName}" already exists.`,
+              "Choose a different project name.");
             return;
           }
 
           // Validate project name
           const name = this.options.projectName;
           if (name.includes("..") || name.startsWith("/") || /[:<>"|?*]/.test(name)) {
-            new Notice("PENNY: Project name cannot contain path traversal sequences or special characters (: < > \" | ? *).");
+            showPennyError(this.plugin.app,
+              "Invalid project name.",
+              "Project name cannot contain path traversal sequences or special characters (: < > \" | ? *).");
             return;
           }
 
@@ -1843,7 +1862,7 @@ export class ProjectInitModal extends Modal {
           } catch (err) {
             const message =
               err instanceof Error ? err.message : String(err);
-            new Notice(`PENNY: Project creation failed -- ${message}`);
+            showPennyError(this.plugin.app, "Project creation failed", message);
             button.setDisabled(false);
             button.setButtonText("Create Project");
           }
@@ -1911,7 +1930,7 @@ class ResearchModal extends Modal {
         this.close();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        new Notice(`PENNY: Research failed -- ${msg}`, 6000);
+        showPennyError(this.plugin.app, "Research failed", msg);
         researchBtn.disabled = false;
         researchBtn.setText("Research");
       }

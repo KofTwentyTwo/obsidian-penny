@@ -8,6 +8,8 @@
 import { PluginSettingTab, Setting, App, Notice, TFolder, TFile, FuzzySuggestModal } from "obsidian";
 import type PennyPlugin from "./main";
 import { DEFAULT_SYSTEM_PROMPT } from "./types";
+import type { LogLevel } from "./types";
+import { showPennyError } from "./error-modal";
 import { ANTHROPIC_MODELS } from "./providers/anthropic";
 import { resolveModel } from "./providers/router";
 
@@ -125,10 +127,9 @@ export class PennySettingTab extends PluginSettingTab {
               apiKey: this.plugin.settings.anthropicApiKey,
             });
             if (result) {
-              new Notice(
-                `PENNY: Anthropic connection failed -- ${result}`,
-                6000,
-              );
+              showPennyError(this.app,
+                "Anthropic connection failed",
+                result);
             } else {
               new Notice(
                 "PENNY: Anthropic connection OK.",
@@ -137,10 +138,7 @@ export class PennySettingTab extends PluginSettingTab {
             }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            new Notice(
-              `PENNY: Test failed -- ${msg}`,
-              6000,
-            );
+            showPennyError(this.app, "Anthropic test failed", msg);
           } finally {
             button.setButtonText("Test Connection");
             button.setDisabled(false);

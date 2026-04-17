@@ -37,15 +37,23 @@ function isPassthrough(tag: string): boolean {
   return (PASSTHROUGH_TAGS as readonly string[]).includes(tag);
 }
 
-/** Info about an annotation that was skipped due to overlap. */
+/** Info about an annotation that was skipped because its range overlapped a larger annotation. */
 export interface SkippedOverlap {
+  /** The tag of the skipped annotation. */
   tag: string;
+  /** The starting line of the skipped annotation. */
   line: number;
 }
 
-/** Result of assembleNewVersion, including assembled text and any skipped overlaps. */
+/**
+ * Result of assembleNewVersion.
+ * Contains the fully assembled chapter text and metadata about any
+ * annotations that were dropped due to overlapping ranges.
+ */
 export interface AssemblyResult {
+  /** The new chapter content with revisions spliced in and processed annotations removed. */
   content: string;
+  /** Annotations that were skipped because they overlapped a larger-scope annotation. */
   skippedOverlaps: SkippedOverlap[];
 }
 
