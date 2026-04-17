@@ -1,8 +1,20 @@
 /**
  * PENNY - Settings Tab
  *
- * Full settings UI with collapsible sections for API, project structure,
- * voice rules, behavior, and git integration.
+ * Obsidian PluginSettingTab subclass that renders the full PENNY settings UI.
+ * Uses collapsible `<details>` sections for organization:
+ *
+ * - Providers: Anthropic API key, Ollama endpoint, connection tests
+ * - Model Routing: tier-to-model mapping, context budget, max tokens
+ * - Project Structure: vault paths for drafts, characters, wiki, etc.
+ * - Voice Rules: custom voice rules textarea, system prompt template
+ * - Behavior: auto-process, logging, file patterns, prose marker
+ * - Git Integration: auto-commit, auto-push, commit message format
+ * - Commands Reference: help text with annotation syntax examples
+ *
+ * Created by main.ts at plugin load. Reads from and writes to plugin.settings.
+ * Re-renders sections dynamically when settings change (e.g. toggling
+ * useSameModelForAll swaps between single and per-tier model selectors).
  */
 
 import { PluginSettingTab, Setting, App, Notice, TFolder, TFile, FuzzySuggestModal } from "obsidian";
@@ -69,6 +81,7 @@ export class PennySettingTab extends PluginSettingTab {
     this.renderVoiceSection(containerEl);
     this.renderBehaviorSection(containerEl);
     this.renderGitSection(containerEl);
+    this.renderCompanionPluginsSection(containerEl);
     this.renderHelpSection(containerEl);
   }
 
@@ -272,14 +285,22 @@ export class PennySettingTab extends PluginSettingTab {
           })
       );
 
+    // Compact routing grid
+    const grid = details.createDiv({ cls: "penny-route-grid" });
+
+    // Column headers
+    const header = grid.createDiv({ cls: "penny-route-header" });
+    header.createSpan({ text: "Tier" });
+    header.createSpan({ text: "Provider / Model" });
+
     if (this.plugin.settings.useSameModelForAll) {
-      // Single row -- edits routeStandard and mirrors to light/heavy
-      this.renderRouteRow(details, "All tiers", "routeStandard", providerNames, true);
+      this.renderRouteRow(grid, "All tiers", "routeStandard", providerNames, true);
     } else {
-      this.renderRouteRow(details, "Light (CUT, PACING)", "routeLight", providerNames);
-      this.renderRouteRow(details, "Standard (TONE, EXPAND, PLOT)", "routeStandard", providerNames);
-      this.renderRouteRow(details, "Heavy (REWRITE, DIALOG, CHARACTER)", "routeHeavy", providerNames);
-      this.renderRouteRow(details, "Research (Do research command)", "routeResearch", providerNames);
+      this.renderRouteRow(grid, "Light", "routeLight", providerNames);
+      this.renderRouteRow(grid, "Standard", "routeStandard", providerNames);
+      this.renderRouteRow(grid, "Heavy", "routeHeavy", providerNames);
+      grid.createDiv({ cls: "penny-route-divider" });
+      this.renderRouteRow(grid, "Research", "routeResearch", providerNames);
     }
 
     // Context budget (moved here from old API section since it relates to routing)
@@ -372,9 +393,13 @@ export class PennySettingTab extends PluginSettingTab {
       // Determine which tier this route represents (for display purposes)
       const tierLabel = routeKey === "routeLight" ? "light"
         : routeKey === "routeHeavy" ? "heavy"
+        : routeKey === "routeResearch" ? "standard"
         : "standard";
-      const autoResolvedModel = resolveModel("auto-latest", tierLabel);
-      const autoLabel = `Auto (recommended) -> ${autoResolvedModel}`;
+      const resolved = resolveModel("auto-latest", tierLabel);
+      // Show a clean short name: "Auto (Opus 4.6)" instead of the full model ID
+      const shortName = resolved.replace("claude-", "").replace(/-/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      const autoLabel = `Auto (${shortName})`;
 
       setting.addDropdown((dropdown) => {
         dropdown.addOption("auto-latest", autoLabel);
@@ -1103,6 +1128,195 @@ export class PennySettingTab extends PluginSettingTab {
     const tip = details.createEl("p", { cls: "penny-help-tip" });
     tip.createEl("strong", { text: "Tip: " });
     tip.appendText("Press Cmd/Ctrl+P and type \"PENNY\" to see all commands. NOTE and RESEARCH tags are never processed -- they're for your own reference.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Companion Plugins
+  // ---------------------------------------------------------------------------
+
+  /** PENNY commands that companion plugins should know about. */
+  private static readonly PENNY_COMMANDS = [
+    { id: "penny:process-chapter", name: "PENNY: Process chapter", icon: "zap" },
+    { id: "penny:process-all", name: "PENNY: Process all", icon: "layers" },
+    { id: "penny:dry-run", name: "PENNY: Dry run", icon: "eye" },
+    { id: "penny:research", name: "PENNY: Research", icon: "search" },
+    { id: "penny:status", name: "PENNY: Status", icon: "info" },
+    { id: "penny:new-chapter", name: "PENNY: New chapter", icon: "file-plus" },
+    { id: "penny:new-character", name: "PENNY: New character", icon: "user-plus" },
+    { id: "penny:git-commit", name: "PENNY: Commit", icon: "git-commit-horizontal" },
+    { id: "penny:git-push", name: "PENNY: Push", icon: "upload" },
+  ];
+
+  /**
+   * Companion Plugins -- detect, describe, and auto-configure complementary plugins.
+   */
+  private renderCompanionPluginsSection(containerEl: HTMLElement): void {
+    const details = containerEl.createEl("details");
+    details.createEl("summary", { text: "Companion Plugins" });
+    details.createEl("p", {
+      text: "These plugins enhance the PENNY workflow. Install them from the Community Plugins browser, then use the auto-configure button to set them up.",
+      cls: "setting-item-description",
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const plugins = (this.app as any).plugins?.manifests ?? {};
+
+    const companions: Array<{
+      id: string;
+      name: string;
+      desc: string;
+      icon: string;
+      url: string;
+      configure: ((card: HTMLElement) => void) | null;
+    }> = [
+      {
+        id: "slash-commander",
+        name: "Slash Commander",
+        desc: "Type / in the editor to access PENNY commands inline. Auto-configure adds all PENNY commands to your slash menu.",
+        icon: "terminal",
+        url: "obsidian://show-plugin?id=slash-commander",
+        configure: (card) => this.configureSlashCommander(card),
+      },
+      {
+        id: "editing-toolbar",
+        name: "Editing Toolbar",
+        desc: "Adds a floating toolbar with quick-access buttons. Auto-configure adds a PENNY submenu with processing and research commands.",
+        icon: "panel-top",
+        url: "obsidian://show-plugin?id=editing-toolbar",
+        configure: (card) => this.configureEditingToolbar(card),
+      },
+      {
+        id: "obsidian-git",
+        name: "Obsidian Git",
+        desc: "Automatic git backup and sync. Pairs well with PENNY's built-in git commands for version control of your prose.",
+        icon: "git-branch",
+        url: "obsidian://show-plugin?id=obsidian-git",
+        configure: null,
+      },
+    ];
+
+    const grid = details.createDiv({ cls: "penny-companion-grid" });
+
+    for (const c of companions) {
+      const installed = c.id in plugins;
+      const card = grid.createDiv({ cls: `penny-companion-card ${installed ? "" : "penny-companion-dimmed"}` });
+
+      // Header row: icon + name + status badge
+      const header = card.createDiv({ cls: "penny-companion-header" });
+      const titleWrap = header.createDiv({ cls: "penny-companion-title-wrap" });
+      titleWrap.createSpan({ cls: "penny-companion-name", text: c.name });
+      titleWrap.createSpan({
+        cls: `penny-companion-badge ${installed ? "penny-badge-installed" : "penny-badge-missing"}`,
+        text: installed ? "Installed" : "Not installed",
+      });
+
+      // Description
+      card.createEl("p", { cls: "penny-companion-desc", text: c.desc });
+
+      // Action buttons
+      const actions = card.createDiv({ cls: "penny-companion-actions" });
+
+      if (installed && c.configure) {
+        const configBtn = actions.createEl("button", { text: "Auto-configure", cls: "mod-cta" });
+        configBtn.addEventListener("click", () => c.configure!(card));
+      }
+
+      if (!installed) {
+        const installLink = actions.createEl("a", {
+          text: "Install from Community Plugins",
+          cls: "penny-companion-link",
+          href: c.url,
+        });
+        installLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).open(c.url);
+        });
+      }
+    }
+  }
+
+  /**
+   * Write PENNY slash commands into Slash Commander's config.
+   */
+  private async configureSlashCommander(card: HTMLElement): Promise<void> {
+    try {
+      const configPath = `${this.app.vault.configDir}/plugins/slash-commander/data.json`;
+      const raw = await this.app.vault.adapter.read(configPath);
+      const config = JSON.parse(raw);
+
+      if (!Array.isArray(config.bindings)) {
+        config.bindings = [];
+      }
+
+      // Remove existing PENNY bindings to avoid duplicates
+      config.bindings = config.bindings.filter(
+        (b: { action?: string }) => !b.action?.startsWith("penny:")
+      );
+
+      // Add PENNY commands
+      for (const cmd of PennySettingTab.PENNY_COMMANDS) {
+        config.bindings.push({
+          name: cmd.name,
+          id: cmd.id,
+          action: cmd.id,
+          icon: cmd.icon,
+          mode: "editing",
+          triggerMode: "anywhere",
+        });
+      }
+
+      await this.app.vault.adapter.write(configPath, JSON.stringify(config, null, 2));
+      new Notice("PENNY commands added to Slash Commander. Reload the plugin to apply.");
+
+      // Show success inline
+      const msg = card.createDiv({ cls: "penny-companion-success" });
+      msg.setText("Configured! Reload Slash Commander to apply.");
+    } catch (e) {
+      new Notice(`Failed to configure Slash Commander: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /**
+   * Write PENNY toolbar submenu into Editing Toolbar's config.
+   */
+  private async configureEditingToolbar(card: HTMLElement): Promise<void> {
+    try {
+      const configPath = `${this.app.vault.configDir}/plugins/editing-toolbar/data.json`;
+      const raw = await this.app.vault.adapter.read(configPath);
+      const config = JSON.parse(raw);
+
+      if (!Array.isArray(config.menuCommands)) {
+        config.menuCommands = [];
+      }
+
+      // Remove existing PENNY submenu to avoid duplicates
+      config.menuCommands = config.menuCommands.filter(
+        (c: { id?: string }) => c.id !== "SubmenuCommands-penny"
+      );
+
+      // Build PENNY submenu
+      const pennySubmenu = {
+        id: "SubmenuCommands-penny",
+        name: "PENNY",
+        icon: "pen-tool",
+        SubmenuCommands: PennySettingTab.PENNY_COMMANDS.map((cmd) => ({
+          id: cmd.id,
+          name: cmd.name,
+          icon: cmd.icon,
+        })),
+      };
+
+      config.menuCommands.push(pennySubmenu);
+
+      await this.app.vault.adapter.write(configPath, JSON.stringify(config, null, 2));
+      new Notice("PENNY submenu added to Editing Toolbar. Reload the plugin to apply.");
+
+      const msg = card.createDiv({ cls: "penny-companion-success" });
+      msg.setText("Configured! Reload Editing Toolbar to apply.");
+    } catch (e) {
+      new Notice(`Failed to configure Editing Toolbar: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 }
 

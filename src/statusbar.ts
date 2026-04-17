@@ -1,8 +1,17 @@
 /**
  * PENNY - Status Bar Widget
  *
- * Manages the status bar element in Obsidian's footer.
- * Shows annotation counts, active chapter info, and processing state.
+ * Manages a status bar element in Obsidian's footer that shows
+ * contextual information about the active file. Created by main.ts
+ * at plugin load and updated on every active-leaf-change event.
+ *
+ * Three display states:
+ * - "ready": default idle state ("PENNY: ready")
+ * - "info": showing annotation count + chapter info for the active file
+ * - "processing": locked to "PENNY: processing..." during LLM calls
+ *
+ * Uses globMatch() from utils.ts for chapter file detection to avoid
+ * constructing RegExp from user input (ReDoS prevention).
  */
 
 import type { TFile } from "obsidian";

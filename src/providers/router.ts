@@ -4,11 +4,19 @@
  * Maps annotation tags to complexity tiers, then resolves the tier to a
  * specific provider + model via a user-configured RouteConfig.
  *
- * Light tasks (CUT, PACING) can use cheaper/faster models.
- * Heavy tasks (REWRITE, DIALOG, CHARACTER) get the strongest model.
- * Standard is the middle ground.
+ * Tier assignments:
+ * - Light:    CUT, PACING (simple edits, cheaper/faster models)
+ * - Standard: TONE, EXPAND, PLOT (moderate complexity)
+ * - Heavy:    REWRITE, DIALOG, CHARACTER (needs strongest model)
  *
  * Unknown tags fall back to "standard".
+ *
+ * Also handles the "auto-latest" model resolution: when the user selects
+ * "Auto (recommended)" in settings, the model field is stored as "auto-latest"
+ * and resolved at runtime to the best Anthropic model for the tier.
+ *
+ * Called by pipeline.ts to determine which provider + model to use for
+ * each annotation, and by settings.ts to display the resolved model name.
  */
 
 /** Complexity tiers that map to model slots. */
@@ -46,6 +54,10 @@ export interface ResolvedRoute {
  * 2. If not found, fall back to "standard".
  * 3. Return the provider+model from the config for that tier.
  * 4. If the model is "auto-latest", resolve it to the recommended model for that tier.
+ *
+ * @param tag    - The annotation tag (e.g. "REWRITE")
+ * @param config - User-configured route assignments per tier
+ * @returns The resolved provider name and concrete model identifier
  */
 export function getRoute(tag: string, config: RouteConfig): ResolvedRoute {
   const tier: ComplexityTier = TAG_COMPLEXITY[tag] ?? "standard";
@@ -62,7 +74,12 @@ export function getRoute(tag: string, config: RouteConfig): ResolvedRoute {
  *
  * When the user selects "Auto (recommended)" in settings, the model
  * field is stored as "auto-latest". At runtime this resolves to the
- * best Anthropic model for the tier.
+ * best Anthropic model for the tier. Non-"auto-latest" model strings
+ * are returned unchanged (passthrough).
+ *
+ * @param model - Model identifier (may be "auto-latest" or a concrete model ID)
+ * @param tier  - Complexity tier for auto-resolution
+ * @returns Concrete model identifier
  */
 export function resolveModel(model: string, tier: string): string {
   if (model === "auto-latest") {

@@ -1,13 +1,23 @@
 /**
  * PENNY - Ollama Provider
  *
- * Implements LLMService for Ollama's OpenAI-compatible endpoint.
- * Uses an injected HTTP function (Obsidian's requestUrl) so this module
- * has no direct Obsidian API dependency.
+ * Implements the LLMService interface for Ollama's local model server.
+ * Allows PENNY to use locally-hosted open-source models (LLaMA, Mistral,
+ * DeepSeek, etc.) instead of or alongside the Anthropic API.
  *
- * Ollama exposes two relevant APIs:
- * - /api/tags          -- list locally available models
- * - /v1/chat/completions -- OpenAI-compatible chat completions
+ * Uses two Ollama APIs:
+ * - GET /api/tags             -- list locally installed models
+ * - POST /v1/chat/completions -- OpenAI-compatible chat completions
+ *
+ * Key differences from the Anthropic provider:
+ * - No API key required by default (local server)
+ * - Model list is dynamically fetched rather than hardcoded
+ * - Token multiplier is 1.0 (most local tokenizers are ~1:1 word:token)
+ * - No extended thinking support
+ * - Connection errors include helpful "Is Ollama running?" messages
+ *
+ * Uses an injected HTTP function (Obsidian's requestUrl) so this module
+ * has no direct Obsidian API dependency and can be tested with a mock.
  */
 
 import type {

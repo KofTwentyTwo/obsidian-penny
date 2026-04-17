@@ -1,11 +1,20 @@
 /**
  * PENNY - LLM Service Interface
  *
- * Every LLM provider implements this interface. Adding a new provider means
- * implementing LLMService and registering it with the ProviderRegistry.
+ * Defines the contract that every LLM provider must implement. Adding a
+ * new provider (e.g. OpenAI, Google) requires:
+ * 1. Implement the LLMService interface in a new file
+ * 2. Register it in providers/index.ts createRegistry()
+ *
+ * Also defines the HTTP abstraction layer (HttpFn, HttpRequestParam,
+ * HttpResponse) so providers can make HTTP calls without importing
+ * Obsidian directly. The real HTTP function (Obsidian's requestUrl)
+ * is injected at construction time via the provider registry.
+ *
+ * This file has no implementation -- it is pure interface definitions.
  */
 
-/** HTTP request parameters -- mirrors Obsidian's RequestUrlParam shape. */
+/** HTTP request parameters. Mirrors Obsidian's RequestUrlParam shape so the adapter is thin. */
 export interface HttpRequestParam {
   url: string;
   method?: string;
@@ -14,7 +23,7 @@ export interface HttpRequestParam {
   contentType?: string;
 }
 
-/** HTTP response shape -- mirrors Obsidian's RequestUrlResponse. */
+/** HTTP response shape. Mirrors Obsidian's RequestUrlResponse for adapter compatibility. */
 export interface HttpResponse {
   status: number;
   headers: Record<string, string>;
@@ -22,28 +31,34 @@ export interface HttpResponse {
   json: unknown;
 }
 
-/** Injectable HTTP function type (Obsidian's requestUrl or a test mock). */
+/** Injectable HTTP function type. Obsidian's requestUrl at runtime; a mock in tests. */
 export type HttpFn = (params: HttpRequestParam) => Promise<HttpResponse>;
 
-/** Every LLM provider implements this interface. */
+/**
+ * Every LLM provider implements this interface.
+ * Instances are created by the provider registry (providers/index.ts)
+ * and looked up by name at runtime by the pipeline.
+ */
 export interface LLMService {
+  /** Unique provider name used in route configuration (e.g. "anthropic", "ollama"). */
   readonly name: string;
+  /** Whether this provider requires an API key to function. */
   readonly requiresApiKey: boolean;
 
-  /** Available models for this provider (static list or fetched from endpoint). */
+  /** Available models for this provider (static list or dynamically fetched from endpoint). */
   getModels(settings?: ProviderSettings): Promise<ModelInfo[]>;
 
-  /** Send a prompt and get a response. */
+  /** Send a prompt and get a completion response. The core LLM call. */
   complete(request: CompletionRequest): Promise<CompletionResponse>;
 
-  /** Rough token estimate for this provider's tokenizer. */
+  /** Rough token estimate for this provider's tokenizer (words * multiplier). */
   estimateTokens(text: string): number;
 
-  /** Test connectivity. Returns error message or null if OK. */
+  /** Test connectivity and authentication. Returns an error message or null if OK. */
   testConnection(settings: ProviderSettings): Promise<string | null>;
 }
 
-/** Metadata about a model available from a provider. */
+/** Metadata about a model available from a provider. Used in settings dropdowns and cost estimation. */
 export interface ModelInfo {
   id: string;
   name: string;
@@ -52,7 +67,7 @@ export interface ModelInfo {
   costPer1kOutput?: number;
 }
 
-/** Request sent to an LLM provider. */
+/** Request sent to an LLM provider. Built by drafter.ts, dispatched by pipeline.ts. */
 export interface CompletionRequest {
   systemPrompt: string;
   userPrompt: string;
@@ -64,7 +79,7 @@ export interface CompletionRequest {
   useThinking?: boolean;
 }
 
-/** Response from an LLM provider. */
+/** Response from an LLM provider. The `text` field contains the revised prose. */
 export interface CompletionResponse {
   text: string;
   usage?: { inputTokens?: number; outputTokens?: number };
@@ -72,7 +87,7 @@ export interface CompletionResponse {
   provider: string;
 }
 
-/** Per-provider settings (API keys, endpoints, etc.). */
+/** Per-provider settings passed to getModels() and testConnection(). Allows arbitrary extra fields via index signature. */
 export interface ProviderSettings {
   apiKey?: string;
   endpoint?: string;

@@ -1,9 +1,19 @@
 /**
  * PENNY - Prose Engine for Narrative, Notes, and Yarns
  *
- * Main plugin entry point. Extends Obsidian's Plugin class to provide
- * AI-powered prose revision, annotation processing, and project management
- * for novel writing in Obsidian.
+ * Main plugin entry point. Extends Obsidian's Plugin class to bootstrap
+ * the entire plugin: loading/saving settings, creating the LLM provider
+ * registry, registering commands, setting up the status bar and ribbon
+ * icon, and wiring the auto-process-on-save hook.
+ *
+ * Architecture:
+ * - Settings are loaded from Obsidian's data.json with migration for
+ *   legacy fields (see migrateSettings in types.ts).
+ * - The provider registry is created with Obsidian's requestUrl as the
+ *   HTTP transport layer, keeping providers decoupled from Obsidian.
+ * - Commands, status bar, and ribbon icon are registered in onload().
+ * - The save hook uses a per-file debounce (2s) and a re-entrancy guard
+ *   (processingFiles set) to prevent cascading triggers.
  *
  * @module main
  */

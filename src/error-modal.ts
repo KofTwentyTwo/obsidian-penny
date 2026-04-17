@@ -73,7 +73,12 @@ export class PennyErrorModal extends Modal {
 
 /**
  * Show a PENNY error in a persistent modal.
- * Use this instead of `new Notice()` for errors.
+ * Use this instead of `new Notice()` for errors that need user attention.
+ *
+ * @param app     - The Obsidian App instance
+ * @param error   - Primary error message
+ * @param details - Optional stack trace or additional detail (shown in expandable section)
+ * @param logPath - Optional path to the activity log file for reference
  */
 export function showPennyError(app: App, error: string, details?: string, logPath?: string): void {
   new PennyErrorModal(app, { error, details, logPath }).open();

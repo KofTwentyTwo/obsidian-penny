@@ -1,8 +1,21 @@
 /**
- * PENNY - Command Registration
+ * PENNY - Command Registration & Vault I/O Layer
  *
- * Registers all command palette commands and defines the ProjectInitModal
- * for scaffolding new novel projects.
+ * The bridge between PENNY's pure-logic modules and Obsidian's vault API.
+ * Responsibilities:
+ *
+ * 1. Registers all command-palette commands (process, dry-run, migrate,
+ *    new-chapter, new-character, git operations, research, status).
+ * 2. Reads files from the vault and passes their contents to the pipeline.
+ * 3. Writes pipeline results (new version files, state, reviews, logs)
+ *    back to the vault.
+ * 4. Manages the progress modal lifecycle and re-entrancy guards.
+ * 5. Provides git commit/push via child_process execFile.
+ * 6. Defines the ProjectInitModal for scaffolding new projects.
+ *
+ * This is the only module (besides main.ts and the UI modules) that
+ * directly uses Obsidian APIs. All annotation processing logic lives
+ * in the pure modules (parser, pipeline, assembler, etc.).
  */
 
 import { FileSystemAdapter, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
@@ -212,11 +225,15 @@ export function requireProvider(plugin: PennyPlugin): boolean {
   const s = plugin.settings;
 
   const routes: Array<{ tier: string; provider: string }> = s.useSameModelForAll
-    ? [{ tier: "standard", provider: s.routeStandard.provider }]
+    ? [
+        { tier: "standard", provider: s.routeStandard.provider },
+        { tier: "research", provider: s.routeResearch.provider },
+      ]
     : [
         { tier: "light", provider: s.routeLight.provider },
         { tier: "standard", provider: s.routeStandard.provider },
         { tier: "heavy", provider: s.routeHeavy.provider },
+        { tier: "research", provider: s.routeResearch.provider },
       ];
 
   // De-duplicate providers while keeping which tier(s) use them

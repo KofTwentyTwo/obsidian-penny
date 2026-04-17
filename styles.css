@@ -331,3 +331,170 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* Model routing grid -- compact tier rows */
+.penny-route-grid {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 8px 0 16px 0;
+}
+
+.penny-route-grid .setting-item {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin: 0;
+}
+
+.penny-route-grid .setting-item:last-child {
+  border-bottom: none;
+}
+
+.penny-route-grid .setting-item-info {
+  flex: 0 0 auto;
+  min-width: 140px;
+}
+
+.penny-route-grid .setting-item-name {
+  font-size: 0.92em;
+  font-weight: 600;
+}
+
+.penny-route-grid .setting-item-description {
+  display: none;
+}
+
+.penny-route-grid .setting-item-control {
+  gap: 8px;
+}
+
+.penny-route-grid .setting-item-control select {
+  font-size: 0.88em;
+}
+
+.penny-route-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 0.78em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.penny-route-header span:first-child {
+  flex: 0 0 140px;
+}
+
+.penny-route-divider {
+  border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.penny-route-muted {
+  color: var(--text-faint);
+  font-size: 0.82em;
+  font-style: italic;
+}
+
+/* Companion plugins section */
+.penny-companion-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.penny-companion-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 14px 18px;
+  background: var(--background-primary);
+  transition: border-color 0.15s;
+}
+
+.penny-companion-card:hover {
+  border-color: var(--text-accent);
+}
+
+.penny-companion-dimmed {
+  opacity: 0.65;
+}
+
+.penny-companion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.penny-companion-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.penny-companion-name {
+  font-weight: 600;
+  font-size: 1.02em;
+}
+
+.penny-companion-badge {
+  font-size: 0.72em;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.penny-badge-installed {
+  background: var(--background-modifier-success, rgba(0, 200, 80, 0.15));
+  color: var(--text-success, #2ecc71);
+}
+
+.penny-badge-missing {
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.penny-companion-desc {
+  font-size: 0.88em;
+  color: var(--text-muted);
+  margin: 0 0 10px 0;
+  line-height: 1.45;
+}
+
+.penny-companion-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.penny-companion-actions .mod-cta {
+  font-size: 0.85em;
+  padding: 4px 14px;
+}
+
+.penny-companion-link {
+  font-size: 0.85em;
+  color: var(--text-accent);
+  text-decoration: none;
+}
+
+.penny-companion-link:hover {
+  text-decoration: underline;
+}
+
+.penny-companion-success {
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: var(--background-modifier-success, rgba(0, 200, 80, 0.1));
+  color: var(--text-success, #2ecc71);
+  border-radius: 6px;
+  font-size: 0.85em;
+  font-weight: 500;
+}

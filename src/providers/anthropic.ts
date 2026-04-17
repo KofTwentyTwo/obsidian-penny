@@ -1,9 +1,19 @@
 /**
  * PENNY - Anthropic Claude Provider
  *
- * Implements LLMService for the Anthropic Messages API.
+ * Implements the LLMService interface for the Anthropic Messages API.
+ * Supports Claude Opus, Sonnet, and Haiku model families.
+ *
+ * Key features:
+ * - Adaptive thinking (extended thinking) for heavy-tier annotations
+ *   on supported models (Opus 4.6, Sonnet 4.6)
+ * - Static model catalog (ANTHROPIC_MODELS) for offline settings display
+ * - Structured error handling with Anthropic-specific status codes
+ * - Response parsing that extracts text blocks from the content array
+ *   (skipping thinking blocks when extended thinking is enabled)
+ *
  * Uses an injected HTTP function (Obsidian's requestUrl) so this module
- * has no direct Obsidian API dependency.
+ * has no direct Obsidian API dependency and can be tested with a mock.
  */
 
 import type {
@@ -18,7 +28,7 @@ import type {
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 
-/** Models that support the extended thinking feature. */
+/** Models that support the adaptive / extended thinking feature (Claude 4.6+). */
 const THINKING_CAPABLE = new Set(["claude-opus-4-6", "claude-sonnet-4-6"]);
 
 /**
@@ -55,7 +65,7 @@ export const ANTHROPIC_MODELS: ModelInfo[] = [
   },
 ];
 
-/** Token estimation multiplier: ~1.33 tokens per word for Anthropic models. */
+/** Token estimation multiplier: ~1.33 tokens per word for Claude's tokenizer. */
 const TOKEN_MULTIPLIER = 1.33;
 
 export class AnthropicProvider implements LLMService {

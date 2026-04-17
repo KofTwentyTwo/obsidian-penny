@@ -1,9 +1,12 @@
 /**
  * PENNY - Provider Exports
  *
- * Re-exports all provider types, implementations, router, and registry.
- * Also provides a convenience function to create and populate a registry
- * with all built-in providers using an injected HTTP function.
+ * Barrel file that re-exports all provider types, implementations,
+ * router, and registry. Also provides createRegistry(), the convenience
+ * factory used by main.ts to bootstrap the provider system.
+ *
+ * Import from `./providers` (this file) rather than from individual
+ * provider files to keep import paths clean.
  */
 
 // Service interface and types
