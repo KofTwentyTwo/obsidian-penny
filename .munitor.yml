@@ -1,0 +1,12 @@
+pipeline: obsidian-plugin
+orb_version: dev:snapshot
+node_version: "20"
+sast: true
+sbom: true
+test:
+  commands: ["npm run build", "npm test"]
+  coverage:
+    tool: vitest
+    command: npx vitest run --coverage
+contexts:
+  github: github

@@ -12,9 +12,12 @@ import type { ProgressEvent } from "./pipeline";
 export class PennyProgressModal extends Modal {
   private logEl!: HTMLElement;
   private headerEl!: HTMLElement;
+  private timerEl!: HTMLElement;
   private cancelled = false;
   private minimized = false;
   private showStatusNotices: boolean;
+  private timerInterval: ReturnType<typeof setInterval> | null = null;
+  private startTime = Date.now();
 
   constructor(app: App, title: string, showStatusNotices = true) {
     super(app);
@@ -27,8 +30,20 @@ export class PennyProgressModal extends Modal {
     contentEl.empty();
     contentEl.addClass("penny-progress-modal");
 
-    this.headerEl = contentEl.createEl("div", { cls: "penny-progress-header" });
+    const headerRow = contentEl.createEl("div", { cls: "penny-progress-header-row" });
+    this.headerEl = headerRow.createEl("div", { cls: "penny-progress-header" });
     this.headerEl.setText("Starting...");
+    this.timerEl = headerRow.createEl("div", { cls: "penny-progress-timer" });
+    this.timerEl.setText("0s");
+
+    // Live elapsed timer -- updates every second so user knows it's alive
+    this.startTime = Date.now();
+    this.timerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      this.timerEl.setText(mins > 0 ? `${mins}m ${secs}s` : `${secs}s`);
+    }, 1000);
 
     this.logEl = contentEl.createEl("div", { cls: "penny-progress-log" });
 
@@ -81,7 +96,11 @@ export class PennyProgressModal extends Modal {
           cls: "penny-progress-line penny-progress-active",
         });
         line.dataset.index = String(event.current);
-        line.setText(event.message ?? "");
+        // Show spinner + message
+        const spinner = line.createEl("span", { cls: "penny-inline-spinner" });
+        spinner.setText("");
+        line.createEl("span", { text: ` ${event.message ?? ""}` });
+        line.createEl("span", { text: " waiting for response...", cls: "penny-waiting-text" });
         this.logEl.scrollTop = this.logEl.scrollHeight;
         break;
       }
@@ -116,9 +135,21 @@ export class PennyProgressModal extends Modal {
 
       case "complete": {
         this.headerEl.setText(event.message ?? "Complete");
+        // Stop the timer
+        if (this.timerInterval) {
+          clearInterval(this.timerInterval);
+          this.timerInterval = null;
+        }
+        // Show final elapsed time
+        const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        this.timerEl.setText(mins > 0 ? `Done in ${mins}m ${secs}s` : `Done in ${secs}s`);
         // Swap Cancel -> Close
-        const btn = this.contentEl.querySelector("button");
-        if (btn) btn.setText("Close");
+        const btns = this.contentEl.querySelectorAll("button");
+        btns.forEach((btn) => { if (btn.textContent === "Cancel") btn.setText("Close"); });
+        // Hide Minimize button
+        btns.forEach((btn) => { if (btn.textContent === "Minimize") btn.style.display = "none"; });
         break;
       }
     }
@@ -129,6 +160,10 @@ export class PennyProgressModal extends Modal {
   }
 
   onClose(): void {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
     this.contentEl.empty();
   }
 }

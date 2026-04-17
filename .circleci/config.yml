@@ -1,7 +1,7 @@
 version: 2.1
 setup: true
 orbs:
-  munitor: kof22/munitor@0.1
+  munitor: kof22/munitor@dev:snapshot
 workflows:
   setup:
     jobs:
