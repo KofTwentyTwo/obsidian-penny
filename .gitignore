@@ -22,3 +22,6 @@ Thumbs.db
 
 # Test
 coverage/
+
+# AI tooling caches (session/transcript data, not portable)
+.claude/
