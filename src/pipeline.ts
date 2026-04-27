@@ -299,6 +299,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         endpoint: route.provider === "ollama" ? settings.ollamaEndpoint : undefined,
         useThinking,
         signal: input.signal,
+        timeoutMs: settings.requestTimeoutMs,
         onToken: onProgress ? (text: string) => {
           onProgress({ type: "token", text, current: i + 1 });
         } : undefined,

@@ -865,6 +865,27 @@ export class PennySettingTab extends PluginSettingTab {
       );
 
     new Setting(details)
+      .setName("Request timeout (seconds)")
+      .setDesc(
+        "Maximum inactivity time per LLM call before PENNY gives up and reports a timeout error. Prevents the modal from hanging forever on a stalled connection. Default: 300 (5 minutes). Set to 0 to disable."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("300")
+          .setValue(String(Math.round(this.plugin.settings.requestTimeoutMs / 1000)))
+          .onChange(async (value) => {
+            const parsed = parseInt(value, 10);
+            if (isNaN(parsed) || parsed < 0) {
+              new Notice("PENNY: Request timeout must be a non-negative number of seconds.");
+              text.setValue(String(Math.round(this.plugin.settings.requestTimeoutMs / 1000)));
+              return;
+            }
+            this.plugin.settings.requestTimeoutMs = parsed * 1000;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(details)
       .setName("Show progress modal")
       .setDesc(
         "Open a progress modal during processing showing real-time annotation status. You can minimize it to continue working."

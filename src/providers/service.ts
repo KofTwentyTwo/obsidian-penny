@@ -85,6 +85,13 @@ export interface CompletionRequest {
    * `AbortError` (err.name === "AbortError").
    */
   signal?: AbortSignal;
+  /**
+   * Optional inactivity timeout in milliseconds. If the provider's HTTP call
+   * goes this long without progress, the call is aborted and the request
+   * rejects with `name === "TimeoutError"` (distinct from AbortError so the
+   * pipeline can surface "Request timed out" in review notes / logs).
+   */
+  timeoutMs?: number;
 }
 
 /** Response from an LLM provider. The `text` field contains the revised prose. */

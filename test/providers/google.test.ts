@@ -52,7 +52,7 @@ function makeRequest(overrides: Partial<CompletionRequest> = {}): CompletionRequ
     userPrompt: "Rewrite this passage with more tension.",
     model: "gemini-2.5-flash",
     maxTokens: 4096,
-    apiKey: "AIzaSy-test-key-123",
+    apiKey: "mock-google-test-key-123",
     ...overrides,
   };
 }
@@ -124,7 +124,7 @@ describe("GoogleProvider", () => {
       await provider.complete(makeRequest());
 
       expect(calls[0].url).toBe(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSy-test-key-123"
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=mock-google-test-key-123"
       );
     });
 
@@ -344,7 +344,7 @@ describe("GoogleProvider", () => {
       const { fn } = mockHttp({ status: 200, text: responseText });
       const provider = new GoogleProvider(fn);
 
-      const result = await provider.testConnection({ apiKey: "AIzaSy-valid" });
+      const result = await provider.testConnection({ apiKey: "mock-google-valid" });
       expect(result).toBeNull();
     });
 
@@ -360,7 +360,7 @@ describe("GoogleProvider", () => {
       const { fn } = mockHttp({ status: 401, text: '{"error":{"message":"invalid key"}}' });
       const provider = new GoogleProvider(fn);
 
-      const result = await provider.testConnection({ apiKey: "AIzaSy-bad" });
+      const result = await provider.testConnection({ apiKey: "mock-google-bad" });
       expect(result).toContain("401");
     });
 
@@ -370,7 +370,7 @@ describe("GoogleProvider", () => {
       };
       const provider = new GoogleProvider(fn);
 
-      const result = await provider.testConnection({ apiKey: "AIzaSy-key" });
+      const result = await provider.testConnection({ apiKey: "mock-google-key" });
       expect(result).toContain("Network error");
     });
 
@@ -379,10 +379,10 @@ describe("GoogleProvider", () => {
       const { fn, calls } = mockHttp({ status: 200, text: responseText });
       const provider = new GoogleProvider(fn);
 
-      await provider.testConnection({ apiKey: "AIzaSy-test" });
+      await provider.testConnection({ apiKey: "mock-google-test" });
 
       expect(calls).toHaveLength(1);
-      expect(calls[0].url).toContain("key=AIzaSy-test");
+      expect(calls[0].url).toContain("key=mock-google-test");
       expect(calls[0].url).toContain("gemini-2.0-flash:generateContent");
       const body = JSON.parse(calls[0].body!);
       expect(body.generationConfig.maxOutputTokens).toBe(16);

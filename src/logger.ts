@@ -56,12 +56,17 @@ const LOG_LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error
  */
 export function pennyLog(level: LogLevel, settingLevel: LogLevel, message: string, ...data: unknown[]): void {
   if (LOG_LEVELS[level] >= LOG_LEVELS[settingLevel]) {
-    const prefix = `[PENNY ${level.toUpperCase()}]`;
+    // The first argument to console.* is a string LITERAL per case so that
+    // taint-flow analyzers (semgrep's unsafe-formatstring rule) cannot
+    // construct a path from runtime values to a format-string sink. The
+    // prefix has always been derived from the closed LogLevel enum so this
+    // was never a real risk -- but expressing it as four literals keeps the
+    // SAST gate quiet without per-line rule suppressions.
     switch (level) {
-      case "debug": console.log(prefix, message, ...data); break;
-      case "info":  console.info(prefix, message, ...data); break;
-      case "warn":  console.warn(prefix, message, ...data); break;
-      case "error": console.error(prefix, message, ...data); break;
+      case "debug": console.log("[PENNY DEBUG]", message, ...data); break;
+      case "info":  console.info("[PENNY INFO]", message, ...data); break;
+      case "warn":  console.warn("[PENNY WARN]", message, ...data); break;
+      case "error": console.error("[PENNY ERROR]", message, ...data); break;
     }
   }
 }

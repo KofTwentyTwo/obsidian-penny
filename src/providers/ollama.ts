@@ -28,7 +28,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
-import { streamRequest } from "./node-stream";
+import { streamRequest, withTimeout } from "./node-stream";
 
 const DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434";
 
@@ -133,12 +133,15 @@ export class OllamaProvider implements LLMService {
 
     let response;
     try {
-      response = await this.httpFn({
-        url: `${endpoint}/v1/chat/completions`,
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
+      response = await withTimeout(
+        this.httpFn({
+          url: `${endpoint}/v1/chat/completions`,
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        }),
+        request.timeoutMs,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes("ECONNREFUSED") || message.includes("fetch failed") || message.includes("Connection refused")) {
@@ -182,6 +185,7 @@ export class OllamaProvider implements LLMService {
       headers,
       body: JSON.stringify(body),
       signal: request.signal,
+      timeoutMs: request.timeoutMs,
       onChunk: (chunk: string) => {
         buffer += chunk;
         const lines = buffer.split("\n");

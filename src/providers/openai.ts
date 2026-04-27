@@ -21,7 +21,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
-import { streamRequest } from "./node-stream";
+import { streamRequest, withTimeout } from "./node-stream";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
@@ -103,15 +103,18 @@ export class OpenAIProvider implements LLMService {
       max_tokens: request.maxTokens,
     };
 
-    const response = await this.httpFn({
-      url: OPENAI_API_URL,
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    const response = await withTimeout(
+      this.httpFn({
+        url: OPENAI_API_URL,
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }),
+      request.timeoutMs,
+    );
 
     if (response.status < 200 || response.status >= 300) {
       throw this.buildHttpError(response.status, response.text);
@@ -143,6 +146,7 @@ export class OpenAIProvider implements LLMService {
       headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: request.signal,
+      timeoutMs: request.timeoutMs,
       onChunk: (chunk: string) => {
         buffer += chunk;
         const lines = buffer.split("\n");
