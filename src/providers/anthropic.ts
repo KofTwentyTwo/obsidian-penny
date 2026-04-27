@@ -100,7 +100,9 @@ export class AnthropicProvider implements LLMService {
         return await this.completeStreaming(request, apiKey);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") throw e;
+        if (e instanceof Error && e.name === "TimeoutError") throw e;
         if (e instanceof Error && e.message.startsWith("Anthropic API error")) throw e;
+        if (e instanceof Error && e.message.startsWith("Anthropic streaming error")) throw e;
         // Transport-level failure (rare with Node https) -- fall through.
       }
     }
@@ -183,6 +185,10 @@ export class AnthropicProvider implements LLMService {
     const textParts: string[] = [];
     let inputTokens = 0;
     let outputTokens = 0;
+    // Captured by the SSE parser when an upstream `error` event arrives.
+    // Thrown after streamRequest resolves so the partial textParts cannot
+    // be returned as a "successful" CompletionResponse.
+    let streamError: Error | null = null;
 
     const result = await streamRequest({
       url: ANTHROPIC_API_URL,
@@ -204,6 +210,15 @@ export class AnthropicProvider implements LLMService {
 
           try {
             const event = JSON.parse(data);
+
+            // Upstream error event -- captured for throw after the stream ends.
+            // Anthropic shape: { type: "error", error: { type, message } }
+            if (event.type === "error") {
+              const errType = event.error?.type ?? "error";
+              const errMsg = event.error?.message ?? "unknown error";
+              streamError = new Error(`Anthropic streaming error [${errType}]: ${errMsg}`);
+              continue;
+            }
 
             // Text delta -- the main output
             if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
@@ -227,6 +242,10 @@ export class AnthropicProvider implements LLMService {
         }
       },
     });
+
+    // Upstream emitted an `error` SSE event mid-stream; surface it instead
+    // of returning the partial pre-error tokens as a successful result.
+    if (streamError) throw streamError;
 
     // streamRequest returns non-2xx as data (not an error); inspect status here.
     if (result.status < 200 || result.status >= 300) {
