@@ -4,9 +4,11 @@ node_version: "20"
 sast: true
 sbom: true
 test:
-  commands: ["npm run build", "npm test"]
+  # `npm run check` = typecheck + vitest with coverage thresholds enforced.
+  # Vitest exits non-zero on threshold violation, failing the build.
+  commands: ["npm run build", "npm run check"]
   coverage:
     tool: vitest
-    command: npx vitest run --coverage
+    command: npm run test:coverage
 contexts:
   github: github
