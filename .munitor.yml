@@ -1,3 +1,6 @@
+# obsidian-plugin pipeline ships only in the Munitor `dev:snapshot` orb
+# build for now; v0.2.x stable releases don't include this template.
+# Bump to a stable tag once Munitor ships obsidian-plugin in a tagged release.
 pipeline: obsidian-plugin
 orb_version: dev:snapshot
 node_version: "20"
@@ -5,10 +8,16 @@ sast: true
 sbom: true
 test:
   # `npm run check` = typecheck + vitest with coverage thresholds enforced.
-  # Vitest exits non-zero on threshold violation, failing the build.
+  # Vitest exits non-zero on threshold violation, failing the build (gate 1).
   commands: ["npm run build", "npm run check"]
   coverage:
     tool: vitest
     command: npm run test:coverage
+    # The orb's node_coverage job parses this summary and enforces
+    # min_instruction independently — second layer of defense in case the
+    # vitest threshold ever gets misconfigured. Ratchet up alongside
+    # vitest.config.ts thresholds.
+    summary_path: coverage/coverage-summary.json
+    min_instruction: "81"
 contexts:
   github: github
