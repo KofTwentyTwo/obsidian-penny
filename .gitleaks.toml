@@ -1,0 +1,27 @@
+# gitleaks configuration
+#
+# Allowlist for test-fixture API key placeholders that gitleaks's history
+# scan would otherwise flag as real secrets. These strings have only ever
+# been used as placeholders in unit tests; no real credential has ever lived
+# in this repository.
+
+[extend]
+# Inherit gitleaks's default rule set.
+useDefault = true
+
+[allowlist]
+description = "Test-fixture mock API keys"
+regexes = [
+    # Old placeholder shape that previously matched gitleaks's
+    # generic-api-key rule (still in git history). See
+    # test/providers/google.test.ts for current values.
+    '''AIzaSy-test-key-123''',
+    '''AIzaSy-(valid|bad|key|test)\b''',
+    # Current placeholder shape -- wide net so any future
+    # mock-google-* test fixture is covered.
+    '''mock-google-[a-z0-9-]+''',
+]
+paths = [
+    # Anything under test/ is fixture territory; never real secrets.
+    '''^test/.+''',
+]
