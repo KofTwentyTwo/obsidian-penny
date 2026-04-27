@@ -72,6 +72,12 @@ export interface PennySettings {
   contextBudget: number;
   /** Max tokens the LLM may generate per revision response. */
   maxTokens: number;
+  /**
+   * Per-call inactivity timeout in milliseconds. Prevents the modal from
+   * hanging forever on a stalled connection. Default 300_000 (5 minutes) to
+   * accommodate slow Opus calls with long context. Set to 0 to disable.
+   */
+  requestTimeoutMs: number;
 
   // Project structure (paths relative to vault root)
   /** Folder containing chapter draft files, organized by book subfolder. */
@@ -252,6 +258,7 @@ export const DEFAULT_SETTINGS: PennySettings = {
 
   contextBudget: 800000,
   maxTokens: 16000,
+  requestTimeoutMs: 300000,
 
   draftsFolder: "04-drafts",
   styleGuide: "",

@@ -21,7 +21,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
-import { streamRequest } from "./node-stream";
+import { streamRequest, withTimeout } from "./node-stream";
 
 const GOOGLE_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -103,14 +103,17 @@ export class GoogleProvider implements LLMService {
 
     const url = `${GOOGLE_API_BASE}/${request.model}:generateContent?key=${apiKey}`;
 
-    const response = await this.httpFn({
-      url,
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    const response = await withTimeout(
+      this.httpFn({
+        url,
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }),
+      request.timeoutMs,
+    );
 
     if (response.status < 200 || response.status >= 300) {
       throw this.buildHttpError(response.status, response.text);
@@ -143,6 +146,7 @@ export class GoogleProvider implements LLMService {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: request.signal,
+      timeoutMs: request.timeoutMs,
       onChunk: (chunk: string) => {
         buffer += chunk;
         const lines = buffer.split("\n");

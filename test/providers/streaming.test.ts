@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, Server } from "http";
 import { AddressInfo } from "net";
-import { streamRequest } from "../../src/providers/node-stream";
+import { streamRequest, withTimeout } from "../../src/providers/node-stream";
 
 /**
  * These tests spin up a tiny real HTTP server on an ephemeral port and exercise
@@ -170,6 +170,69 @@ describe("streamRequest", () => {
     expect(result.fullText).toBe("server overloaded");
   });
 
+  describe("timeout", () => {
+    it("rejects with TimeoutError when the server never responds", async () => {
+      // Handler accepts the connection but never writes a response. Without a
+      // timeout, this hangs forever -- the bug we're fixing in #18.
+      currentHandler = (_req, _res) => {
+        // Intentionally do nothing -- never send headers, never end the response.
+      };
+
+      const start = Date.now();
+      await expect(
+        streamRequest({
+          url: `${baseUrl}/never-responds`,
+          method: "GET",
+          headers: {},
+          timeoutMs: 150,
+          onChunk: () => { /* never called */ },
+        }),
+      ).rejects.toMatchObject({ name: "TimeoutError" });
+
+      // Should fire near our 150ms threshold, not run to completion or vitest's 5s default.
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeGreaterThanOrEqual(140);
+      expect(elapsed).toBeLessThan(2000);
+    });
+
+    it("does not fire when the server responds within the budget", async () => {
+      currentHandler = (_req, res) => {
+        res.writeHead(200);
+        res.end("ok");
+      };
+
+      const result = await streamRequest({
+        url: `${baseUrl}/fast`,
+        method: "GET",
+        headers: {},
+        timeoutMs: 1000,
+        onChunk: () => { /* ignore */ },
+      });
+      expect(result.status).toBe(200);
+      expect(result.fullText).toBe("ok");
+    });
+
+    it("timeout error is distinguishable from AbortError", async () => {
+      currentHandler = (_req, _res) => {
+        // Never respond
+      };
+
+      const promise = streamRequest({
+        url: `${baseUrl}/timeout-not-abort`,
+        method: "GET",
+        headers: {},
+        timeoutMs: 100,
+        onChunk: () => { /* ignore */ },
+      });
+
+      const err = await promise.catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err.name).toBe("TimeoutError");
+      expect(err.name).not.toBe("AbortError");
+      expect(err.message).toMatch(/timed? ?out/i);
+    });
+  });
+
   it("does not let a throwing onChunk consumer kill the stream", async () => {
     currentHandler = (_req, res) => {
       res.writeHead(200);
@@ -192,5 +255,47 @@ describe("streamRequest", () => {
     expect(result.fullText).toBe("ab");
     expect(received).toContain("a");
     expect(received).toContain("b");
+  });
+});
+
+describe("withTimeout", () => {
+  it("resolves with the original value when the promise completes within budget", async () => {
+    const result = await withTimeout(Promise.resolve("ok"), 1000);
+    expect(result).toBe("ok");
+  });
+
+  it("rejects with TimeoutError when the promise takes longer than the budget", async () => {
+    const slow = new Promise((resolve) => setTimeout(() => resolve("late"), 200));
+    const start = Date.now();
+    await expect(withTimeout(slow, 50)).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeGreaterThanOrEqual(40);
+    expect(elapsed).toBeLessThan(150);
+  });
+
+  it("propagates the timeoutMs in the error message", async () => {
+    const slow = new Promise(() => { /* never resolves */ });
+    const err = await withTimeout(slow, 75).catch((e) => e);
+    expect(err.message).toMatch(/75/);
+    expect(err.message).toMatch(/timed? ?out/i);
+  });
+
+  it("returns the promise unchanged when timeoutMs is undefined", async () => {
+    const slow = new Promise((resolve) => setTimeout(() => resolve("done"), 50));
+    const result = await withTimeout(slow, undefined);
+    expect(result).toBe("done");
+  });
+
+  it("returns the promise unchanged when timeoutMs is zero", async () => {
+    const slow = new Promise((resolve) => setTimeout(() => resolve("done"), 50));
+    const result = await withTimeout(slow, 0);
+    expect(result).toBe("done");
+  });
+
+  it("propagates rejections from the wrapped promise", async () => {
+    const failing = Promise.reject(new Error("upstream failure"));
+    await expect(withTimeout(failing, 1000)).rejects.toThrow("upstream failure");
   });
 });

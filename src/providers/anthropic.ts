@@ -24,7 +24,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
-import { streamRequest } from "./node-stream";
+import { streamRequest, withTimeout } from "./node-stream";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -129,12 +129,15 @@ export class AnthropicProvider implements LLMService {
       headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
     }
 
-    const response = await this.httpFn({
-      url: ANTHROPIC_API_URL,
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
+    const response = await withTimeout(
+      this.httpFn({
+        url: ANTHROPIC_API_URL,
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      }),
+      request.timeoutMs,
+    );
 
     if (response.status < 200 || response.status >= 300) {
       throw this.buildHttpError(response.status, response.text);
@@ -187,6 +190,7 @@ export class AnthropicProvider implements LLMService {
       headers,
       body: JSON.stringify(body),
       signal: request.signal,
+      timeoutMs: request.timeoutMs,
       onChunk: (chunk: string) => {
         buffer += chunk;
         // Parse SSE lines from buffer; keep incomplete last line for next chunk

@@ -25,6 +25,13 @@ export interface StreamOptions {
   headers: Record<string, string>;
   body?: string;
   signal?: AbortSignal;
+  /**
+   * Optional inactivity timeout in milliseconds. When the request goes this
+   * long without sending or receiving bytes, the request is destroyed and the
+   * promise rejects with `name === "TimeoutError"` (distinct from AbortError
+   * so callers can distinguish user-cancellation from server-hang).
+   */
+  timeoutMs?: number;
   /** Called for each raw chunk of response text as it arrives. */
   onChunk: (text: string) => void;
 }
@@ -38,6 +45,8 @@ export interface StreamResult {
  * Issue an HTTP(S) request and stream the response body chunk-by-chunk.
  *
  * Throws an Error with `name === "AbortError"` if the signal aborts.
+ * Throws an Error with `name === "TimeoutError"` if `timeoutMs` is set and
+ * elapses without server activity.
  * Rejects on network/DNS errors. A non-2xx status is NOT an error here --
  * the caller inspects `result.status` and `result.fullText` to decide.
  */
@@ -72,6 +81,10 @@ export function streamRequest(opts: StreamOptions): Promise<StreamResult> {
 
     const chunks: string[] = [];
     let settled = false;
+    // Marker set by the timeout callback before destroying the request.
+    // Read in the error handler to disambiguate timeout from abort/transport errors,
+    // since req.destroy() emits the same ECONNRESET-shaped error in all three cases.
+    let timedOut = false;
 
     const req = transport.request(requestOptions, (res: IncomingMessage) => {
       res.setEncoding("utf8");
@@ -104,6 +117,14 @@ export function streamRequest(opts: StreamOptions): Promise<StreamResult> {
     req.on("error", (err: Error) => {
       if (settled) return;
       settled = true;
+      // Order matters: timeout must be checked before abort, since a timeout
+      // that fires while a signal is also pending could be misclassified.
+      if (timedOut) {
+        const timeoutErr = new Error(`Request timed out after ${opts.timeoutMs}ms`);
+        timeoutErr.name = "TimeoutError";
+        reject(timeoutErr);
+        return;
+      }
       // When we call req.destroy() due to abort, Node emits ECONNRESET / socket
       // hang up here. Translate to a clean AbortError so callers can detect it.
       if (opts.signal?.aborted) {
@@ -123,6 +144,17 @@ export function streamRequest(opts: StreamOptions): Promise<StreamResult> {
     };
     opts.signal?.addEventListener("abort", onAbort);
 
+    // Wire the inactivity timeout. Node's req.setTimeout(ms, cb) fires cb after
+    // ms of no socket activity. We mark `timedOut` so the error handler can
+    // produce a TimeoutError instead of a generic transport error or AbortError.
+    if (opts.timeoutMs && opts.timeoutMs > 0) {
+      req.setTimeout(opts.timeoutMs, () => {
+        if (settled) return;
+        timedOut = true;
+        req.destroy(new Error("timeout"));
+      });
+    }
+
     // Clean up the listener once we've resolved or rejected
     const cleanup = () => {
       opts.signal?.removeEventListener("abort", onAbort);
@@ -133,5 +165,38 @@ export function streamRequest(opts: StreamOptions): Promise<StreamResult> {
       req.write(opts.body);
     }
     req.end();
+  });
+}
+
+/**
+ * Wrap an arbitrary Promise with a TimeoutError fallback.
+ *
+ * Used for the non-streaming provider path, which goes through Obsidian's
+ * `requestUrl` (no native AbortSignal support). The underlying request keeps
+ * running in the background after the timeout fires -- there is no way to
+ * cancel it -- but the promise the caller awaits rejects on time, freeing
+ * the UI. Node/Electron eventually GCs the orphaned request.
+ *
+ * For the streaming path, prefer `streamRequest({ timeoutMs })` which can
+ * actually destroy the in-flight request via `req.destroy()`.
+ *
+ * @param promise   The promise to race against the timeout.
+ * @param timeoutMs Inactivity ceiling in milliseconds. If undefined or <=0,
+ *                  the original promise is returned unchanged (no timeout).
+ * @returns         A promise that resolves with the original value, or rejects
+ *                  with `name === "TimeoutError"` after `timeoutMs` elapses.
+ */
+export function withTimeout<T>(promise: Promise<T>, timeoutMs?: number): Promise<T> {
+  if (!timeoutMs || timeoutMs <= 0) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err = new Error(`Request timed out after ${timeoutMs}ms`);
+      err.name = "TimeoutError";
+      reject(err);
+    }, timeoutMs);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
   });
 }

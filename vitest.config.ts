@@ -29,10 +29,10 @@ export default defineConfig({
         // gap to 90% is in the four providers' streaming SSE paths; closing
         // audit issue #41 brings global coverage to ~90% in one shot.
         //
-        // Baseline as of 2026-04-27:
-        //   lines 81.88%, statements 81.28%, functions 91.25%, branches 69.26%
-        lines: 81,
-        statements: 80,
+        // After issue #18 (LLM timeout): lines 82.19%, statements 81.56%,
+        // functions 91.56%, branches 69.60%.
+        lines: 82,
+        statements: 81,
         functions: 91,
         branches: 69,
 
@@ -51,7 +51,7 @@ export default defineConfig({
         "src/providers/service.ts": { lines: 100, functions: 100 },
         "src/frontmatter.ts": { lines: 97, functions: 100 },
         "src/pipeline.ts": { lines: 95, functions: 87 },
-        "src/providers/node-stream.ts": { lines: 93, functions: 100 },
+        "src/providers/node-stream.ts": { lines: 95, functions: 100 },
         "src/parser.ts": { lines: 88, functions: 100 },
         "src/reviewer.ts": { lines: 85 },
         "src/context.ts": { lines: 83, functions: 100 },
