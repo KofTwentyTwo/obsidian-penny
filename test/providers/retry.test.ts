@@ -211,6 +211,35 @@ describe("withRetry", () => {
     await expect(withRetry(fn, { maxAttempts: 1 })).rejects.toMatchObject({ status: 503 });
     expect(fn).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects immediately if signal aborts before sleepCancellable arms its timer", async () => {
+    // The fn aborts the signal as part of its rejection, so by the time the
+    // helper enters sleepCancellable the signal is already aborted. This
+    // exercises the pre-check inside the sleep promise.
+    const ctrl = new AbortController();
+    const fn = vi.fn(async () => {
+      ctrl.abort();
+      throw new HttpError(503, { "retry-after": "10" }, "");
+    });
+    await expect(
+      withRetry(fn, { maxAttempts: 3, signal: ctrl.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("describes a non-Error throw as 'transport' in the onRetry reason", async () => {
+    let attempts = 0;
+    const fn = async (): Promise<string> => {
+      attempts += 1;
+      if (attempts === 1) throw "network down"; // non-Error throw
+      return "ok";
+    };
+    const onRetry = vi.fn();
+    const result = await withRetry(fn, { maxAttempts: 2, onRetry });
+    expect(result).toBe("ok");
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onRetry.mock.calls[0][0].reason).toBe("transport");
+  });
 });
 
 describe("StreamResult shape", () => {
