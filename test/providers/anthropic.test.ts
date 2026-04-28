@@ -296,6 +296,18 @@ describe("AnthropicProvider", () => {
       expect(body.model).toBe("claude-opus-4-6");
     });
 
+    it("preserves leading and trailing whitespace in the response (#16)", async () => {
+      // Authors rely on intentional whitespace as part of vertical rhythm.
+      // Provider parseResponse must not silently .trim() the model output.
+      const responseText = anthropicResponse("\n  the door slammed.  \n");
+      const { fn } = mockHttp({ text: responseText });
+      const provider = new AnthropicProvider(fn);
+
+      const result = await provider.complete(makeRequest());
+
+      expect(result.text).toBe("\n  the door slammed.  \n");
+    });
+
     it("throws on 400 response with error message", async () => {
       const errorResponse = JSON.stringify({
         error: { type: "invalid_request_error", message: "max_tokens must be positive" },

@@ -328,7 +328,7 @@ export class GoogleProvider implements LLMService {
           (part: Record<string, unknown>) => typeof part.text === "string",
         );
         if (textPart) {
-          text = textPart.text.trim();
+          text = textPart.text;
         }
       }
     }
