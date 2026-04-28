@@ -24,17 +24,17 @@ export default defineConfig({
         "src/logger.ts",
       ],
       thresholds: {
-        // Global floor — ratchet only up. Every PR that adds tests should
-        // raise these toward 90% as actual coverage rises. The bulk of the
-        // gap to 90% is in the four providers' streaming SSE paths; closing
-        // audit issue #41 brings global coverage to ~90% in one shot.
+        // Global floor — ratchet only up.
         //
-        // After issue #18 (LLM timeout): lines 82.19%, statements 81.56%,
-        // functions 91.56%, branches 69.60%.
-        lines: 82,
-        statements: 81,
-        functions: 91,
-        branches: 69,
+        // After issue #17 (SSE error events): lines 90.93%, statements 89.77%,
+        // functions 96.38%, branches 77.54%. The streaming-errors tests
+        // exercised the previously-uncovered streaming SSE paths across all
+        // four providers, delivering the global-coverage jump that audit
+        // issue #41 was scoped for.
+        lines: 90,
+        statements: 89,
+        functions: 96,
+        branches: 77,
 
         // Per-file ratchets — each module locked at or just below its current
         // coverage so it cannot regress. When tests rise, raise the lock here

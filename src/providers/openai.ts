@@ -89,7 +89,9 @@ export class OpenAIProvider implements LLMService {
         return await this.completeStreaming(request, apiKey);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") throw e;
+        if (e instanceof Error && e.name === "TimeoutError") throw e;
         if (e instanceof Error && e.message.startsWith("OpenAI API error")) throw e;
+        if (e instanceof Error && e.message.startsWith("OpenAI streaming error")) throw e;
         // Transport-level failure -- fall through to httpFn.
       }
     }
@@ -139,6 +141,10 @@ export class OpenAIProvider implements LLMService {
 
     let buffer = "";
     const textParts: string[] = [];
+    // Captured by the SSE parser when an upstream `error` event arrives.
+    // Thrown after streamRequest resolves so partial pre-error tokens can't
+    // surface as a successful CompletionResponse.
+    let streamError: Error | null = null;
 
     const result = await streamRequest({
       url: OPENAI_API_URL,
@@ -158,6 +164,13 @@ export class OpenAIProvider implements LLMService {
           if (data === "[DONE]") continue;
           try {
             const event = JSON.parse(data);
+            // Upstream error event. OpenAI shape: { error: { message, type, ... } }
+            if (event.error) {
+              const errType = event.error?.type ?? "error";
+              const errMsg = event.error?.message ?? String(event.error);
+              streamError = new Error(`OpenAI streaming error [${errType}]: ${errMsg}`);
+              continue;
+            }
             const delta = event.choices?.[0]?.delta?.content;
             if (typeof delta === "string") {
               textParts.push(delta);
@@ -167,6 +180,8 @@ export class OpenAIProvider implements LLMService {
         }
       },
     });
+
+    if (streamError) throw streamError;
 
     if (result.status < 200 || result.status >= 300) {
       throw this.buildHttpError(result.status, result.fullText);

@@ -108,7 +108,9 @@ export class OllamaProvider implements LLMService {
         return await this.completeStreaming(request, endpoint);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") throw e;
+        if (e instanceof Error && e.name === "TimeoutError") throw e;
         if (e instanceof Error && e.message.startsWith("Ollama error")) throw e;
+        if (e instanceof Error && e.message.startsWith("Ollama streaming error")) throw e;
         // Transport-level failure (ECONNREFUSED, etc.) -- fall through to httpFn,
         // which will produce the usual "Is Ollama running?" diagnostic.
       }
@@ -178,6 +180,8 @@ export class OllamaProvider implements LLMService {
 
     let buffer = "";
     const textParts: string[] = [];
+    // Captured by the SSE parser when an upstream `error` event arrives.
+    let streamError: Error | null = null;
 
     const result = await streamRequest({
       url: `${endpoint}/v1/chat/completions`,
@@ -197,6 +201,22 @@ export class OllamaProvider implements LLMService {
           if (data === "[DONE]") continue;
           try {
             const event = JSON.parse(data);
+            // Ollama emits errors in two shapes:
+            //   { "error": "context deadline exceeded" }     -- bare string
+            //   { "error": { "message": "...", "type": "..." } } -- OpenAI-compat object
+            if (event.error) {
+              let errMsg: string;
+              let errType: string;
+              if (typeof event.error === "string") {
+                errMsg = event.error;
+                errType = "error";
+              } else {
+                errMsg = event.error?.message ?? String(event.error);
+                errType = event.error?.type ?? "error";
+              }
+              streamError = new Error(`Ollama streaming error [${errType}]: ${errMsg}`);
+              continue;
+            }
             const delta = event.choices?.[0]?.delta?.content;
             if (typeof delta === "string") {
               textParts.push(delta);
@@ -206,6 +226,8 @@ export class OllamaProvider implements LLMService {
         }
       },
     });
+
+    if (streamError) throw streamError;
 
     if (result.status < 200 || result.status >= 300) {
       throw this.buildHttpError(result.status, result.fullText, endpoint);

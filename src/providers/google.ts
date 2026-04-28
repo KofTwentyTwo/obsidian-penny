@@ -78,7 +78,9 @@ export class GoogleProvider implements LLMService {
         return await this.completeStreaming(request, apiKey);
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") throw e;
+        if (e instanceof Error && e.name === "TimeoutError") throw e;
         if (e instanceof Error && e.message.startsWith("Google API error")) throw e;
+        if (e instanceof Error && e.message.startsWith("Google streaming error")) throw e;
         // Transport-level failure -- fall through to httpFn.
       }
     }
@@ -139,6 +141,8 @@ export class GoogleProvider implements LLMService {
 
     let buffer = "";
     const textParts: string[] = [];
+    // Captured by the SSE parser when an upstream `error` event arrives.
+    let streamError: Error | null = null;
 
     const result = await streamRequest({
       url,
@@ -157,6 +161,13 @@ export class GoogleProvider implements LLMService {
           const data = line.slice(6).trim();
           try {
             const event = JSON.parse(data);
+            // Upstream error event. Google shape: { error: { code, message, status } }
+            if (event.error) {
+              const errStatus = event.error?.status ?? event.error?.code ?? "error";
+              const errMsg = event.error?.message ?? String(event.error);
+              streamError = new Error(`Google streaming error [${errStatus}]: ${errMsg}`);
+              continue;
+            }
             const parts = event.candidates?.[0]?.content?.parts;
             if (Array.isArray(parts)) {
               for (const part of parts) {
@@ -170,6 +181,8 @@ export class GoogleProvider implements LLMService {
         }
       },
     });
+
+    if (streamError) throw streamError;
 
     if (result.status < 200 || result.status >= 300) {
       throw this.buildHttpError(result.status, result.fullText);
