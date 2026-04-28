@@ -58,7 +58,8 @@ export interface ProgressEvent {
     | "assembling"
     | "complete"
     | "cancelled"
-    | "token";
+    | "token"
+    | "retry";
   total?: number;
   current?: number;
   tag?: string;
@@ -70,6 +71,12 @@ export interface ProgressEvent {
   message?: string;
   /** Streaming token text (for type: "token"). */
   text?: string;
+  /** Upcoming attempt number (1-based) for type: "retry". */
+  attempt?: number;
+  /** Milliseconds the pipeline will sleep before the upcoming attempt. */
+  waitMs?: number;
+  /** Short cause label (e.g. "HTTP 429", "TimeoutError"). */
+  reason?: string;
 }
 
 /**
