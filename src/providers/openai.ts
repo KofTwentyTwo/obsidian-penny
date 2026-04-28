@@ -21,7 +21,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
-import { streamRequest, withTimeout } from "./node-stream";
+import { streamRequest, withTimeout, withRetry, HttpError } from "./node-stream";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
@@ -82,6 +82,31 @@ export class OpenAIProvider implements LLMService {
       throw new Error("OpenAI API key is required");
     }
 
+    const maxRetries = request.maxRetries ?? 3;
+
+    let started = false;
+    const wrappedRequest: CompletionRequest = request.onToken
+      ? {
+          ...request,
+          onToken: (text: string) => {
+            started = true;
+            request.onToken!(text);
+          },
+        }
+      : request;
+
+    return withRetry(() => this.doOneAttempt(wrappedRequest, apiKey), {
+      maxAttempts: maxRetries + 1,
+      canStillRetry: () => !started,
+      signal: request.signal,
+      onRetry: request.onRetry,
+    });
+  }
+
+  private async doOneAttempt(
+    request: CompletionRequest,
+    apiKey: string,
+  ): Promise<CompletionResponse> {
     // Stream via Node https (streamRequest) when onToken is set. AbortError
     // and API errors must propagate; only true transport failures fall back.
     if (request.onToken && typeof globalThis.fetch === "function") {
@@ -90,7 +115,7 @@ export class OpenAIProvider implements LLMService {
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") throw e;
         if (e instanceof Error && e.name === "TimeoutError") throw e;
-        if (e instanceof Error && e.message.startsWith("OpenAI API error")) throw e;
+        if (e instanceof HttpError) throw e;
         if (e instanceof Error && e.message.startsWith("OpenAI streaming error")) throw e;
         // Transport-level failure -- fall through to httpFn.
       }
@@ -119,7 +144,7 @@ export class OpenAIProvider implements LLMService {
     );
 
     if (response.status < 200 || response.status >= 300) {
-      throw this.buildHttpError(response.status, response.text);
+      throw this.buildHttpError(response.status, response.text, response.headers);
     }
 
     return this.parseResponse(response.text, request.model);
@@ -184,7 +209,7 @@ export class OpenAIProvider implements LLMService {
     if (streamError) throw streamError;
 
     if (result.status < 200 || result.status >= 300) {
-      throw this.buildHttpError(result.status, result.fullText);
+      throw this.buildHttpError(result.status, result.fullText, result.headers);
     }
 
     return {
@@ -217,7 +242,7 @@ export class OpenAIProvider implements LLMService {
       if (response.status >= 200 && response.status < 300) {
         return null; // success
       }
-      return this.buildHttpError(response.status, response.text).message;
+      return this.buildHttpError(response.status, response.text, response.headers).message;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `OpenAI connection failed: ${message}`;
@@ -225,10 +250,14 @@ export class OpenAIProvider implements LLMService {
   }
 
   /**
-   * Build a descriptive Error from an OpenAI HTTP error response.
-   * Attempts to parse the OpenAI error JSON format; falls back to raw text.
+   * Build a typed HttpError from an OpenAI HTTP error response. Attaches
+   * status + headers so the retry helper can read Retry-After.
    */
-  private buildHttpError(status: number, responseText: string): Error {
+  private buildHttpError(
+    status: number,
+    responseText: string,
+    headers: Record<string, string> = {},
+  ): HttpError {
     let detail: string;
     try {
       const data = JSON.parse(responseText);
@@ -241,13 +270,13 @@ export class OpenAIProvider implements LLMService {
       detail = responseText;
     }
 
-    if (status === 401) {
-      return new Error(`OpenAI API error (401): Invalid API key. ${detail}`);
-    }
-    if (status === 429) {
-      return new Error(`OpenAI API error (429): Rate limited. ${detail}`);
-    }
-    return new Error(`OpenAI API error (${status}): ${detail}`);
+    const baseMsg =
+      status === 401
+        ? `OpenAI API error (401): Invalid API key. ${detail}`
+        : status === 429
+          ? `OpenAI API error (429): Rate limited. ${detail}`
+          : `OpenAI API error (${status}): ${detail}`;
+    return new HttpError(status, headers, responseText, baseMsg);
   }
 
   /**
