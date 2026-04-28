@@ -92,6 +92,18 @@ export interface CompletionRequest {
    * pipeline can surface "Request timed out" in review notes / logs).
    */
   timeoutMs?: number;
+  /**
+   * Optional cap on retries beyond the initial call. `maxRetries: 3` means up
+   * to 4 total HTTP attempts (1 initial + 3 retries). Defaults to 3 when
+   * undefined. Set to 0 to disable retry entirely.
+   */
+  maxRetries?: number;
+  /**
+   * Optional callback invoked before each retry sleep. The pipeline forwards
+   * this to a `ProgressEvent("retry", ...)` so the modal can render status.
+   * Providers themselves never construct ProgressEvents (Obsidian-free).
+   */
+  onRetry?: (info: { attempt: number; waitMs: number; reason: string }) => void;
 }
 
 /** Response from an LLM provider. The `text` field contains the revised prose. */
