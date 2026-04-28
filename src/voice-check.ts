@@ -58,18 +58,48 @@ function splitSentences(text: string): string[] {
 }
 
 /**
- * Extract dialogue word count from prose.
- * Dialogue = text enclosed in quotation marks (straight or curly).
+ * Patterns that match dialogue spans across the supported quote styles
+ * (issue #5):
+ *
+ * - Straight double quotes (`"..."`)
+ * - Paired typographic double quotes (U+201C ... U+201D)
+ * - Single-quoted dialogue (British style `'...'`). Opener anchored at line
+ *   start or after whitespace; closer followed by sentence punctuation,
+ *   whitespace, or end-of-line. Apostrophes inside contractions don't qualify
+ *   because they are mid-word, not at quote boundaries.
+ * - Paired typographic single quotes (U+2018 ... U+2019)
+ *
+ * Each pattern captures the dialogue text in group 1.
+ */
+const DIALOGUE_PATTERNS: readonly RegExp[] = [
+  /"([^"\n]+?)"/g,
+  /\u201C([^\u201D\n]+?)\u201D/g,
+  /(?:^|\s)'([^'\n]+?)'(?=[\s.!?,;:]|$)/gm,
+  /\u2018([^\u2019\n]+?)\u2019/g,
+];
+
+/**
+ * Extract dialogue word count from prose. Counts spoken text across all
+ * supported quote styles.
  */
 function extractDialogueWords(text: string): number {
-  const dialogueRe = /[""\u201C](.*?)[""\u201D]/g;
   let count = 0;
-  let m: RegExpExecArray | null;
-  while ((m = dialogueRe.exec(text)) !== null) {
-    const words = m[1].trim().split(/\s+/);
-    count += words.filter((w) => w.length > 0).length;
+  for (const re of DIALOGUE_PATTERNS) {
+    for (const match of text.matchAll(re)) {
+      const words = match[1].trim().split(/\s+/);
+      count += words.filter((w) => w.length > 0).length;
+    }
   }
   return count;
+}
+
+/** Strip dialogue spans across all supported quote styles, leaving narration. */
+function stripDialogue(text: string): string {
+  let out = text;
+  for (const re of DIALOGUE_PATTERNS) {
+    out = out.replace(re, " ");
+  }
+  return out;
 }
 
 function totalWords(text: string): number {
@@ -92,7 +122,7 @@ export function checkVoiceCompliance(prose: string): VoiceComplianceResult {
 
   // --- Long narration sentences ---
   // Remove dialogue from the text to isolate narration.
-  const narration = prose.replace(/[""\u201C].*?[""\u201D]/g, "");
+  const narration = stripDialogue(prose);
   const sentences = splitSentences(narration);
   const longNarrationSentences: string[] = [];
   for (const sentence of sentences) {
