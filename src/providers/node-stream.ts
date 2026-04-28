@@ -287,3 +287,85 @@ export function backoffDelay(err: unknown, attempt: number): number {
   const base = Math.min(MAX_BACKOFF_MS, 1000 * Math.pow(2, attempt));
   return Math.floor(Math.random() * base);
 }
+
+/** Information passed to `onRetry` before the helper sleeps and re-attempts. */
+export interface RetryInfo {
+  /** 1-based count of the upcoming attempt. First retry is `attempt: 2`. */
+  attempt: number;
+  /** Milliseconds the helper will sleep before the upcoming attempt. */
+  waitMs: number;
+  /** Short label describing the cause (e.g. "HTTP 429", "TimeoutError", "transport"). */
+  reason: string;
+}
+
+export interface RetryOpts {
+  /** Total attempts, including the initial call. `maxAttempts: 3` allows up to 2 retries. */
+  maxAttempts: number;
+  /** Optional gate. If returns false, retries are skipped (used to stop after tokens stream). */
+  canStillRetry?: () => boolean;
+  /** Optional cancellation signal. Aborts both in-flight attempts and inter-attempt sleeps. */
+  signal?: AbortSignal;
+  /** Optional callback invoked before each retry sleep (for logging / progress UI). */
+  onRetry?: (info: RetryInfo) => void;
+}
+
+/**
+ * Retry an async function up to `maxAttempts` times when the thrown error
+ * is classified retriable by `isRetriable`. Sleeps between attempts using
+ * `backoffDelay` (Retry-After honored when present; otherwise full-jitter
+ * exponential). Cancellation-aware: an aborted signal interrupts both
+ * in-flight attempts and inter-attempt sleeps.
+ */
+export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts): Promise<T> {
+  if (opts.signal?.aborted) throw makeAbortError();
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < opts.maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const isFinalAttempt = attempt === opts.maxAttempts - 1;
+      if (isFinalAttempt) throw err;
+      if (!isRetriable(err)) throw err;
+      if (opts.canStillRetry && !opts.canStillRetry()) throw err;
+
+      const waitMs = backoffDelay(err, attempt);
+      const reason = describeRetryReason(err);
+      opts.onRetry?.({ attempt: attempt + 2, waitMs, reason });
+      await sleepCancellable(waitMs, opts.signal);
+    }
+  }
+  throw lastErr;
+}
+
+function makeAbortError(): Error {
+  const err = new Error("Request aborted");
+  err.name = "AbortError";
+  return err;
+}
+
+function describeRetryReason(err: unknown): string {
+  if (err instanceof HttpError) return `HTTP ${err.status}`;
+  if (err instanceof Error) return err.name === "Error" ? "transport" : err.name;
+  return "transport";
+}
+
+async function sleepCancellable(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return;
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(makeAbortError());
+      return;
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(makeAbortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}

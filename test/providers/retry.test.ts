@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { HttpError, isRetriable, parseRetryAfter, backoffDelay } from "../../src/providers/node-stream";
+import { describe, it, expect, vi } from "vitest";
+import { HttpError, isRetriable, parseRetryAfter, backoffDelay, withRetry } from "../../src/providers/node-stream";
 
 describe("HttpError", () => {
   it("captures status, headers, and body", () => {
@@ -123,5 +123,92 @@ describe("backoffDelay", () => {
       expect(s).toBeGreaterThanOrEqual(0);
       expect(s).toBeLessThan(2_000);
     }
+  });
+});
+
+describe("withRetry", () => {
+  it("returns the result on first success without retry", async () => {
+    const fn = vi.fn(async () => "ok");
+    const result = await withRetry(fn, { maxAttempts: 3 });
+    expect(result).toBe("ok");
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries on retriable error and succeeds (429 -> 429 -> 200)", async () => {
+    let attempts = 0;
+    const fn = vi.fn(async () => {
+      attempts += 1;
+      if (attempts < 3) throw new HttpError(429, { "retry-after": "0" }, "");
+      return "ok";
+    });
+    const result = await withRetry(fn, { maxAttempts: 3 });
+    expect(result).toBe("ok");
+    expect(fn).toHaveBeenCalledTimes(3);
+  });
+
+  it("propagates non-retriable error immediately (no further attempts)", async () => {
+    const fn = vi.fn(async () => { throw new HttpError(401, {}, ""); });
+    await expect(withRetry(fn, { maxAttempts: 3 })).rejects.toMatchObject({ status: 401 });
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates the last error after maxAttempts", async () => {
+    // Retry-After: 0 keeps the inter-attempt sleep at 0ms so the test is deterministic.
+    const fn = vi.fn(async () => { throw new HttpError(503, { "retry-after": "0" }, ""); });
+    await expect(withRetry(fn, { maxAttempts: 3 })).rejects.toMatchObject({ status: 503 });
+    expect(fn).toHaveBeenCalledTimes(3);
+  });
+
+  it("invokes onRetry with attempt number, waitMs, and reason before each retry", async () => {
+    let attempts = 0;
+    const fn = async (): Promise<string> => {
+      attempts += 1;
+      if (attempts < 3) throw new HttpError(429, { "retry-after": "0" }, "");
+      return "ok";
+    };
+    const onRetry = vi.fn();
+    await withRetry(fn, { maxAttempts: 3, onRetry });
+    expect(onRetry).toHaveBeenCalledTimes(2);
+    expect(onRetry.mock.calls[0][0]).toMatchObject({ attempt: 2, reason: "HTTP 429" });
+    expect(onRetry.mock.calls[1][0]).toMatchObject({ attempt: 3, reason: "HTTP 429" });
+  });
+
+  it("respects canStillRetry returning false (skips retry)", async () => {
+    let started = false;
+    const fn = vi.fn(async () => {
+      started = true;
+      throw new HttpError(503, {}, "");
+    });
+    await expect(
+      withRetry(fn, { maxAttempts: 3, canStillRetry: () => !started }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("respects an already-aborted signal and throws AbortError immediately", async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const fn = vi.fn(async () => "ok");
+    await expect(
+      withRetry(fn, { maxAttempts: 3, signal: ctrl.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("aborts mid-sleep promptly and throws AbortError", async () => {
+    const ctrl = new AbortController();
+    const fn = vi.fn(async () => { throw new HttpError(503, { "retry-after": "60" }, ""); });
+    setTimeout(() => ctrl.abort(), 10);
+    const start = Date.now();
+    await expect(
+      withRetry(fn, { maxAttempts: 3, signal: ctrl.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  it("maxAttempts: 1 makes a single attempt and surfaces the error (no retry)", async () => {
+    const fn = vi.fn(async () => { throw new HttpError(503, {}, ""); });
+    await expect(withRetry(fn, { maxAttempts: 1 })).rejects.toMatchObject({ status: 503 });
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 });
