@@ -339,7 +339,7 @@ export class OllamaProvider implements LLMService {
     if (data && Array.isArray(data.choices) && data.choices.length > 0) {
       const choice = data.choices[0];
       if (choice.message && typeof choice.message.content === "string") {
-        text = choice.message.content.trim();
+        text = choice.message.content;
       }
     }
 

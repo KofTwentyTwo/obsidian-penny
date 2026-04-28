@@ -389,7 +389,7 @@ export class AnthropicProvider implements LLMService {
         (block: Record<string, unknown>) => block.type === "text",
       );
       if (textBlock && typeof textBlock.text === "string") {
-        text = textBlock.text.trim();
+        text = textBlock.text;
       }
     }
 
