@@ -78,6 +78,12 @@ export interface PennySettings {
    * accommodate slow Opus calls with long context. Set to 0 to disable.
    */
   requestTimeoutMs: number;
+  /**
+   * Maximum retries on top of the initial LLM call. `maxRetries: 3` means up
+   * to 4 total attempts. Set to 0 to disable retry. Applies to 429, 408, 5xx,
+   * and transport errors. Default 3.
+   */
+  maxRetries: number;
 
   // Project structure (paths relative to vault root)
   /** Folder containing chapter draft files, organized by book subfolder. */
@@ -259,6 +265,7 @@ export const DEFAULT_SETTINGS: PennySettings = {
   contextBudget: 800000,
   maxTokens: 16000,
   requestTimeoutMs: 300000,
+  maxRetries: 3,
 
   draftsFolder: "04-drafts",
   styleGuide: "",
