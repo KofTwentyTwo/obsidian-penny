@@ -886,6 +886,27 @@ export class PennySettingTab extends PluginSettingTab {
       );
 
     new Setting(details)
+      .setName("Max retries on transient errors")
+      .setDesc(
+        "Number of retries on top of the initial LLM call when the API returns 429, 408, 5xx, or a transport error. Default: 3. Set to 0 to disable retry entirely. Honors Retry-After when present, otherwise full-jitter exponential backoff capped at 60 seconds per attempt."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("3")
+          .setValue(String(this.plugin.settings.maxRetries))
+          .onChange(async (value) => {
+            const parsed = parseInt(value, 10);
+            if (isNaN(parsed) || parsed < 0 || parsed > 10) {
+              new Notice("PENNY: Max retries must be an integer between 0 and 10.");
+              text.setValue(String(this.plugin.settings.maxRetries));
+              return;
+            }
+            this.plugin.settings.maxRetries = parsed;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(details)
       .setName("Show progress modal")
       .setDesc(
         "Open a progress modal during processing showing real-time annotation status. You can minimize it to continue working."
