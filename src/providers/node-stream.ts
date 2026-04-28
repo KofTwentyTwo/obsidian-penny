@@ -200,3 +200,21 @@ export function withTimeout<T>(promise: Promise<T>, timeoutMs?: number): Promise
     );
   });
 }
+
+/**
+ * Typed HTTP error carrying the response status, headers, and body.
+ *
+ * Thrown by each provider's `buildHttpError` so the retry helper can
+ * read `Retry-After` and decide whether the failure is retriable.
+ */
+export class HttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly headers: Record<string, string>,
+    public readonly body: string,
+    message?: string,
+  ) {
+    super(message ?? `HTTP ${status}`);
+    this.name = "HttpError";
+  }
+}
