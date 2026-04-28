@@ -603,9 +603,11 @@ export async function processChapter(plugin: PennyPlugin, file: TFile, options?:
       return null;
     }
 
-    // Update .version and .state.json (upsert -- these always exist after first run)
+    // Update .version and .state.json (upsert -- these always exist after first run).
+    // .state.json is the source of truth for which annotations have been processed;
+    // safeStateWrite snapshots a `.bak` before overwrite (issue #31).
     await upsertFile(plugin, versionFilePath, String(result.newVersion));
-    await upsertFile(plugin, stateFilePath, result.stateJson);
+    await safeStateWrite(plugin, stateFilePath, result.stateJson);
 
     // Write review note (reviewPath pre-computed above)
     const reviewFolder = reviewPath.split("/").slice(0, -1).join("/");
@@ -1284,11 +1286,31 @@ async function reconcileVersionState(
     }, null, 2);
   }
 
-  // Write corrected files to disk
+  // Write corrected files to disk. State gets a .bak snapshot so a corrupt
+  // reconciliation can be recovered manually (issue #31).
   await plugin.app.vault.adapter.write(`${folderPath}/.version`, newVersionContent);
-  await plugin.app.vault.adapter.write(`${folderPath}/.state.json`, newStateContent);
+  await safeStateWrite(plugin, `${folderPath}/.state.json`, newStateContent);
 
   return { versionContent: newVersionContent, stateContent: newStateContent };
+}
+
+/**
+ * Write critical state content (`.state.json`) with a one-shot `.bak` of the
+ * previous contents. Keeps the most recent backup only — the next overwrite
+ * replaces it. Cheap insurance against a buggy reconciliation or partial
+ * write corrupting the source of truth for which annotations were processed.
+ */
+async function safeStateWrite(
+  plugin: PennyPlugin,
+  path: string,
+  content: string,
+): Promise<void> {
+  const exists = await plugin.app.vault.adapter.exists(path);
+  if (exists) {
+    const previous = await plugin.app.vault.adapter.read(path);
+    await plugin.app.vault.adapter.write(`${path}.bak`, previous);
+  }
+  await plugin.app.vault.adapter.write(path, content);
 }
 
 /**
