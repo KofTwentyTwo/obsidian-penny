@@ -27,14 +27,13 @@ export default defineConfig({
         // Global floor — ratchet only up.
         //
         // After issue #17 (SSE error events): lines 90.93%, statements 89.77%,
-        // functions 96.38%, branches 77.54%. The streaming-errors tests
-        // exercised the previously-uncovered streaming SSE paths across all
-        // four providers, delivering the global-coverage jump that audit
-        // issue #41 was scoped for.
-        lines: 90,
-        statements: 89,
-        functions: 96,
-        branches: 77,
+        // functions 96.38%, branches 77.54%.
+        // After issue #15 (retry/backoff) on top of #17: lines 91.60%,
+        // statements 90.51%, functions 97.43%, branches 79.08%.
+        lines: 91,
+        statements: 90,
+        functions: 97,
+        branches: 79,
 
         // Per-file ratchets — each module locked at or just below its current
         // coverage so it cannot regress. When tests rise, raise the lock here
@@ -51,7 +50,7 @@ export default defineConfig({
         "src/providers/service.ts": { lines: 100, functions: 100 },
         "src/frontmatter.ts": { lines: 97, functions: 100 },
         "src/pipeline.ts": { lines: 95, functions: 87 },
-        "src/providers/node-stream.ts": { lines: 95, functions: 100 },
+        "src/providers/node-stream.ts": { lines: 96, functions: 100 },
         "src/parser.ts": { lines: 88, functions: 100 },
         "src/reviewer.ts": { lines: 85 },
         "src/context.ts": { lines: 83, functions: 100 },

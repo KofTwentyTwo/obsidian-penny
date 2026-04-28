@@ -12,10 +12,14 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../src/providers/node-stream", () => {
+vi.mock("../../src/providers/node-stream", async (importActual) => {
+  // Keep the real HttpError / withRetry / isRetriable / backoffDelay so the
+  // providers' refactored complete() wrappers function normally. Only swap
+  // the network primitives (streamRequest) and bypass the timeout helper.
+  const actual = await importActual<typeof import("../../src/providers/node-stream")>();
   return {
+    ...actual,
     streamRequest: vi.fn(),
-    // Pass-through: tests don't exercise the timeout helper here
     withTimeout: <T>(p: Promise<T>) => p,
   };
 });
@@ -57,7 +61,7 @@ describe("Anthropic streaming — SSE error events", () => {
     const tokens: string[] = [];
 
     await expect(
-      provider.complete({
+      provider.complete({ maxRetries: 0,
         systemPrompt: "s",
         userPrompt: "u",
         model: "claude-sonnet-4-6",
@@ -76,7 +80,7 @@ describe("Anthropic streaming — SSE error events", () => {
     ]);
 
     const provider = new AnthropicProvider(stubHttp);
-    const result = await provider.complete({
+    const result = await provider.complete({ maxRetries: 0,
       systemPrompt: "s",
       userPrompt: "u",
       model: "claude-sonnet-4-6",
@@ -99,7 +103,7 @@ describe("Anthropic streaming — SSE error events", () => {
 
     const provider = new AnthropicProvider(stubHttp);
     await expect(
-      provider.complete({
+      provider.complete({ maxRetries: 0,
         systemPrompt: "s",
         userPrompt: "u",
         model: "claude-sonnet-4-6",
@@ -120,7 +124,7 @@ describe("OpenAI streaming — SSE error events", () => {
 
     const provider = new OpenAIProvider(stubHttp);
     await expect(
-      provider.complete({
+      provider.complete({ maxRetries: 0,
         systemPrompt: "s",
         userPrompt: "u",
         model: "gpt-4.1",
@@ -138,7 +142,7 @@ describe("OpenAI streaming — SSE error events", () => {
     ]);
 
     const provider = new OpenAIProvider(stubHttp);
-    const result = await provider.complete({
+    const result = await provider.complete({ maxRetries: 0,
       systemPrompt: "s",
       userPrompt: "u",
       model: "gpt-4.1",
@@ -161,7 +165,7 @@ describe("Google streaming — SSE error events", () => {
 
     const provider = new GoogleProvider(stubHttp);
     await expect(
-      provider.complete({
+      provider.complete({ maxRetries: 0,
         systemPrompt: "s",
         userPrompt: "u",
         model: "gemini-2.5-flash",
@@ -179,7 +183,7 @@ describe("Google streaming — SSE error events", () => {
     ]);
 
     const provider = new GoogleProvider(stubHttp);
-    const result = await provider.complete({
+    const result = await provider.complete({ maxRetries: 0,
       systemPrompt: "s",
       userPrompt: "u",
       model: "gemini-2.5-flash",
@@ -203,7 +207,7 @@ describe("Ollama streaming — SSE error events", () => {
 
     const provider = new OllamaProvider(stubHttp);
     await expect(
-      provider.complete({
+      provider.complete({ maxRetries: 0,
         systemPrompt: "s",
         userPrompt: "u",
         model: "llama3.2",
@@ -222,7 +226,7 @@ describe("Ollama streaming — SSE error events", () => {
 
     const provider = new OllamaProvider(stubHttp);
     await expect(
-      provider.complete({
+      provider.complete({ maxRetries: 0,
         systemPrompt: "s",
         userPrompt: "u",
         model: "llama3.2",
@@ -240,7 +244,7 @@ describe("Streaming error events — common contract", () => {
       'data: {"type":"error","error":{"type":"x","message":"y"}}\n\n',
     ]);
     const provider = new AnthropicProvider(stubHttp);
-    const err = await provider.complete({
+    const err = await provider.complete({ maxRetries: 0,
       systemPrompt: "s",
       userPrompt: "u",
       model: "claude-sonnet-4-6",

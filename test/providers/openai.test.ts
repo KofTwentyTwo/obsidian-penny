@@ -239,8 +239,9 @@ describe("OpenAIProvider", () => {
       const { fn } = mockHttp({ status: 429, text: errorResponse });
       const provider = new OpenAIProvider(fn);
 
-      await expect(provider.complete(makeRequest())).rejects.toThrow("Rate limited");
-      await expect(provider.complete(makeRequest())).rejects.toThrow("429");
+      // maxRetries: 0 keeps this single-attempt; retry behavior covered separately.
+      await expect(provider.complete(makeRequest({ maxRetries: 0 }))).rejects.toThrow("Rate limited");
+      await expect(provider.complete(makeRequest({ maxRetries: 0 }))).rejects.toThrow("429");
     });
 
     it("throws on 500 response with server error text", async () => {
@@ -250,15 +251,15 @@ describe("OpenAIProvider", () => {
       const { fn } = mockHttp({ status: 500, text: errorResponse });
       const provider = new OpenAIProvider(fn);
 
-      await expect(provider.complete(makeRequest())).rejects.toThrow("OpenAI API error (500)");
-      await expect(provider.complete(makeRequest())).rejects.toThrow("Internal server error");
+      await expect(provider.complete(makeRequest({ maxRetries: 0 }))).rejects.toThrow("OpenAI API error (500)");
+      await expect(provider.complete(makeRequest({ maxRetries: 0 }))).rejects.toThrow("Internal server error");
     });
 
     it("throws with raw text when error response is not valid JSON", async () => {
       const { fn } = mockHttp({ status: 502, text: "Bad Gateway" });
       const provider = new OpenAIProvider(fn);
 
-      await expect(provider.complete(makeRequest())).rejects.toThrow("OpenAI API error (502): Bad Gateway");
+      await expect(provider.complete(makeRequest({ maxRetries: 0 }))).rejects.toThrow("OpenAI API error (502): Bad Gateway");
     });
   });
 

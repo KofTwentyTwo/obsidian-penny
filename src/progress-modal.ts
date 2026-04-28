@@ -227,6 +227,23 @@ export class PennyProgressModal extends Modal {
         }
         break;
       }
+      case "retry": {
+        const line = this.logEl.querySelector(
+          `[data-index="${event.current}"]`,
+        ) as HTMLElement | null;
+        if (line) {
+          const attempt = event.attempt ?? 0;
+          const waitSec = Math.round((event.waitMs ?? 0) / 1000);
+          const reason = event.reason ?? "transient error";
+          // Replace the line content. Spinner is dropped for now; it returns
+          // on the next annotation-start cycle. Acceptable trade-off for a
+          // transient state.
+          line.setText(
+            ` Retrying after ${reason} (attempt ${attempt}, waiting ${waitSec}s)...`,
+          );
+        }
+        break;
+      }
       case "annotation-done": {
         if (this.streamEl) {
           this.streamEl.remove();

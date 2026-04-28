@@ -278,7 +278,8 @@ describe("OllamaProvider", () => {
       const { fn } = mockHttp({ status: 500, text: "Internal Server Error" });
       const provider = new OllamaProvider(fn);
 
-      await expect(provider.complete(makeRequest())).rejects.toThrow("Ollama error (500): Internal Server Error");
+      // maxRetries: 0 keeps this single-attempt; retry behavior covered separately.
+      await expect(provider.complete(makeRequest({ maxRetries: 0 }))).rejects.toThrow("Ollama error (500): Internal Server Error");
     });
 
     it("throws connection refused message when Ollama is not running", async () => {

@@ -32,7 +32,7 @@ import { assembleNewVersion } from "./assembler";
 import { readVersion, nextVersion, readState, updateState, shouldProcess, serializeState } from "./versioner";
 import { parseFrontmatter, serializeFrontmatter, updateAgentFields, countProseWords, detectCharacters } from "./frontmatter";
 import { generateReview } from "./reviewer";
-import { createLogEntry, formatLogEntry } from "./logger";
+import { createLogEntry, formatLogEntry, pennyLog } from "./logger";
 import { checkVoiceCompliance } from "./voice-check";
 import { getRoute } from "./providers/router";
 
@@ -58,7 +58,8 @@ export interface ProgressEvent {
     | "assembling"
     | "complete"
     | "cancelled"
-    | "token";
+    | "token"
+    | "retry";
   total?: number;
   current?: number;
   tag?: string;
@@ -70,6 +71,12 @@ export interface ProgressEvent {
   message?: string;
   /** Streaming token text (for type: "token"). */
   text?: string;
+  /** Upcoming attempt number (1-based) for type: "retry". */
+  attempt?: number;
+  /** Milliseconds the pipeline will sleep before the upcoming attempt. */
+  waitMs?: number;
+  /** Short cause label (e.g. "HTTP 429", "TimeoutError"). */
+  reason?: string;
 }
 
 /**
@@ -300,6 +307,26 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
         useThinking,
         signal: input.signal,
         timeoutMs: settings.requestTimeoutMs,
+        maxRetries: settings.maxRetries ?? 3,
+        onRetry: (info) => {
+          pennyLog("info", settings.logLevel, "LLM retry", {
+            provider: route.provider,
+            model: route.model,
+            attempt: info.attempt,
+            waitMs: info.waitMs,
+            reason: info.reason,
+          });
+          onProgress?.({
+            type: "retry",
+            attempt: info.attempt,
+            waitMs: info.waitMs,
+            reason: info.reason,
+            provider: route.provider,
+            model: route.model,
+            current: i + 1,
+            total: toProcess.length,
+          });
+        },
         onToken: onProgress ? (text: string) => {
           onProgress({ type: "token", text, current: i + 1 });
         } : undefined,
