@@ -218,3 +218,22 @@ export class HttpError extends Error {
     this.name = "HttpError";
   }
 }
+
+/**
+ * Classify a thrown error as retriable or not for `withRetry`.
+ *
+ * Retriable: HttpError with status 429/408/5xx, OR transport errors
+ * (anything that is not HttpError, AbortError, or TimeoutError).
+ * Non-retriable: AbortError (user cancellation), TimeoutError (the
+ * user-set inactivity ceiling fired -- retrying would double the wait),
+ * and HttpError with non-retriable status (other 4xx).
+ */
+export function isRetriable(err: unknown): boolean {
+  if (err instanceof Error) {
+    if (err.name === "AbortError" || err.name === "TimeoutError") return false;
+    if (err instanceof HttpError) {
+      return err.status === 429 || err.status === 408 || err.status >= 500;
+    }
+  }
+  return true;
+}
