@@ -28,7 +28,7 @@ import type {
   ProviderSettings,
   HttpFn,
 } from "./service";
-import { streamRequest, withTimeout } from "./node-stream";
+import { streamRequest, withTimeout, withRetry, HttpError } from "./node-stream";
 
 const DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434";
 
@@ -98,6 +98,28 @@ export class OllamaProvider implements LLMService {
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
+    const maxRetries = request.maxRetries ?? 3;
+
+    let started = false;
+    const wrappedRequest: CompletionRequest = request.onToken
+      ? {
+          ...request,
+          onToken: (text: string) => {
+            started = true;
+            request.onToken!(text);
+          },
+        }
+      : request;
+
+    return withRetry(() => this.doOneAttempt(wrappedRequest), {
+      maxAttempts: maxRetries + 1,
+      canStillRetry: () => !started,
+      signal: request.signal,
+      onRetry: request.onRetry,
+    });
+  }
+
+  private async doOneAttempt(request: CompletionRequest): Promise<CompletionResponse> {
     const endpoint = request.endpoint ?? DEFAULT_OLLAMA_ENDPOINT;
 
     // Stream via Node http/https (streamRequest) when onToken is set. AbortError
@@ -109,7 +131,7 @@ export class OllamaProvider implements LLMService {
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") throw e;
         if (e instanceof Error && e.name === "TimeoutError") throw e;
-        if (e instanceof Error && e.message.startsWith("Ollama error")) throw e;
+        if (e instanceof HttpError) throw e;
         if (e instanceof Error && e.message.startsWith("Ollama streaming error")) throw e;
         // Transport-level failure (ECONNREFUSED, etc.) -- fall through to httpFn,
         // which will produce the usual "Is Ollama running?" diagnostic.
@@ -153,7 +175,7 @@ export class OllamaProvider implements LLMService {
     }
 
     if (response.status < 200 || response.status >= 300) {
-      throw this.buildHttpError(response.status, response.text, endpoint);
+      throw this.buildHttpError(response.status, response.text, endpoint, response.headers);
     }
 
     return this.parseResponse(response.text, request.model);
@@ -230,7 +252,7 @@ export class OllamaProvider implements LLMService {
     if (streamError) throw streamError;
 
     if (result.status < 200 || result.status >= 300) {
-      throw this.buildHttpError(result.status, result.fullText, endpoint);
+      throw this.buildHttpError(result.status, result.fullText, endpoint, result.headers);
     }
 
     return {
@@ -258,7 +280,7 @@ export class OllamaProvider implements LLMService {
       if (response.status >= 200 && response.status < 300) {
         return null; // success
       }
-      return this.buildHttpError(response.status, response.text, endpoint).message;
+      return this.buildHttpError(response.status, response.text, endpoint, response.headers).message;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes("ECONNREFUSED") || message.includes("fetch failed") || message.includes("Connection refused")) {
@@ -269,9 +291,15 @@ export class OllamaProvider implements LLMService {
   }
 
   /**
-   * Build a descriptive Error from an Ollama HTTP error response.
+   * Build a typed HttpError from an Ollama HTTP error response. Attaches
+   * status + headers so the retry helper can read Retry-After.
    */
-  private buildHttpError(status: number, responseText: string, _endpoint: string): Error {
+  private buildHttpError(
+    status: number,
+    responseText: string,
+    _endpoint: string,
+    headers: Record<string, string> = {},
+  ): HttpError {
     let detail: string;
     try {
       const data = JSON.parse(responseText);
@@ -279,7 +307,7 @@ export class OllamaProvider implements LLMService {
     } catch {
       detail = responseText;
     }
-    return new Error(`Ollama error (${status}): ${detail}`);
+    return new HttpError(status, headers, responseText, `Ollama error (${status}): ${detail}`);
   }
 
   /**
