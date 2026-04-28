@@ -237,3 +237,53 @@ export function isRetriable(err: unknown): boolean {
   }
   return true;
 }
+
+const MAX_BACKOFF_MS = 60_000;
+
+/**
+ * Parse an RFC 7231 `Retry-After` header value into milliseconds.
+ * Accepts delta-seconds ("30") or HTTP-date ("Wed, 21 Oct 2026 07:28:00 GMT").
+ * Returns null when the value is missing or unparseable.
+ * HTTP-dates in the past are clamped to 0 ms (retry immediately).
+ */
+export function parseRetryAfter(value: string | undefined): number | null {
+  if (value === undefined || value === "") return null;
+  const trimmed = value.trim();
+
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    return null;
+  }
+
+  // Require at least one alphabetic character before trying Date.parse so that
+  // bare-number/sign inputs like "-5" don't sneak through as year-style dates.
+  if (!/[A-Za-z]/.test(trimmed)) return null;
+  const ts = Date.parse(trimmed);
+  if (Number.isFinite(ts)) {
+    return Math.max(0, ts - Date.now());
+  }
+  return null;
+}
+
+/**
+ * Compute the wait between retry attempts.
+ *
+ * If `err` is an `HttpError` with a parseable `Retry-After` header, use
+ * that (capped at 60s). Otherwise, full-jitter exponential backoff:
+ *   delay = random(0, min(60_000, 1000 * 2^attempt))
+ *
+ * `attempt` is 0-indexed across retries:
+ *   attempt 0 -> base 1s   (wait before retry #1)
+ *   attempt 1 -> base 2s   (wait before retry #2)
+ *   attempt 2 -> base 4s   (wait before retry #3)
+ *   attempt N -> base min(60s, 2^N s)
+ */
+export function backoffDelay(err: unknown, attempt: number): number {
+  if (err instanceof HttpError) {
+    const parsed = parseRetryAfter(err.headers["retry-after"]);
+    if (parsed !== null) return Math.min(parsed, MAX_BACKOFF_MS);
+  }
+  const base = Math.min(MAX_BACKOFF_MS, 1000 * Math.pow(2, attempt));
+  return Math.floor(Math.random() * base);
+}

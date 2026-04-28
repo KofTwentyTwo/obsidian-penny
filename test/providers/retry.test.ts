@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { HttpError, isRetriable } from "../../src/providers/node-stream";
+import { HttpError, isRetriable, parseRetryAfter, backoffDelay } from "../../src/providers/node-stream";
 
 describe("HttpError", () => {
   it("captures status, headers, and body", () => {
@@ -57,5 +57,71 @@ describe("isRetriable", () => {
 
   it("retries non-Error throws (treats unknown as retriable transport noise)", () => {
     expect(isRetriable("network down")).toBe(true);
+  });
+});
+
+describe("parseRetryAfter", () => {
+  it("parses delta-seconds (number)", () => {
+    expect(parseRetryAfter("30")).toBe(30_000);
+    expect(parseRetryAfter("0")).toBe(0);
+  });
+
+  it("parses HTTP-date and returns ms-from-now (clamped to >= 0)", () => {
+    const future = new Date(Date.now() + 10_000).toUTCString();
+    const parsed = parseRetryAfter(future);
+    expect(parsed).not.toBeNull();
+    expect(parsed!).toBeGreaterThan(5_000);
+    expect(parsed!).toBeLessThanOrEqual(10_000);
+
+    const past = new Date(Date.now() - 60_000).toUTCString();
+    expect(parseRetryAfter(past)).toBe(0);
+  });
+
+  it("returns null for malformed values", () => {
+    expect(parseRetryAfter("abc")).toBeNull();
+    expect(parseRetryAfter("")).toBeNull();
+    expect(parseRetryAfter(undefined)).toBeNull();
+    expect(parseRetryAfter("-5")).toBeNull();
+  });
+});
+
+describe("backoffDelay", () => {
+  it("honors Retry-After header (seconds), capped at 60s", () => {
+    const err = new HttpError(429, { "retry-after": "30" }, "");
+    expect(backoffDelay(err, 0)).toBe(30_000);
+  });
+
+  it("caps Retry-After at 60s for a misformatted long delay", () => {
+    const err = new HttpError(429, { "retry-after": "86400" }, "");
+    expect(backoffDelay(err, 0)).toBe(60_000);
+  });
+
+  it("falls back to exponential with full jitter on malformed Retry-After", () => {
+    const err = new HttpError(429, { "retry-after": "ABCD" }, "");
+    const samples = Array.from({ length: 50 }, () => backoffDelay(err, 0));
+    for (const s of samples) {
+      expect(s).toBeGreaterThanOrEqual(0);
+      expect(s).toBeLessThan(1_000);
+    }
+  });
+
+  it("exponential base scales 1s/2s/4s with full jitter, capped at 60s", () => {
+    const err = new HttpError(500, {}, "");
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const cap = Math.min(60_000, 1_000 * Math.pow(2, attempt));
+      const samples = Array.from({ length: 30 }, () => backoffDelay(err, attempt));
+      for (const s of samples) {
+        expect(s).toBeGreaterThanOrEqual(0);
+        expect(s).toBeLessThan(cap || 1);
+      }
+    }
+  });
+
+  it("non-HttpError uses exponential", () => {
+    const samples = Array.from({ length: 30 }, () => backoffDelay(new Error("oops"), 1));
+    for (const s of samples) {
+      expect(s).toBeGreaterThanOrEqual(0);
+      expect(s).toBeLessThan(2_000);
+    }
   });
 });
