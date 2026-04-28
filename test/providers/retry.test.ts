@@ -212,3 +212,14 @@ describe("withRetry", () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("StreamResult shape", () => {
+  it("exposes headers as Record<string,string>", () => {
+    const r: import("../../src/providers/node-stream").StreamResult = {
+      status: 200,
+      fullText: "",
+      headers: { "content-type": "application/json" },
+    };
+    expect(r.headers["content-type"]).toBe("application/json");
+  });
+});

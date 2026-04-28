@@ -39,6 +39,8 @@ export interface StreamOptions {
 export interface StreamResult {
   status: number;
   fullText: string;
+  /** Lowercased response headers; multi-value headers joined with ", ". */
+  headers: Record<string, string>;
 }
 
 /**
@@ -104,6 +106,7 @@ export function streamRequest(opts: StreamOptions): Promise<StreamResult> {
         resolve({
           status: res.statusCode ?? 0,
           fullText: chunks.join(""),
+          headers: normalizeIncomingHeaders(res.headers),
         });
       });
 
@@ -368,4 +371,20 @@ async function sleepCancellable(ms: number, signal?: AbortSignal): Promise<void>
     }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+/**
+ * Flatten Node's IncomingHttpHeaders shape (string | string[] | undefined)
+ * into a lowercased Record<string,string> for downstream consumers (the
+ * retry helper, providers reading Retry-After, etc.).
+ */
+function normalizeIncomingHeaders(
+  raw: NodeJS.Dict<string | string[]>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (value === undefined) continue;
+    out[name.toLowerCase()] = Array.isArray(value) ? value.join(", ") : value;
+  }
+  return out;
 }
