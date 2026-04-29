@@ -383,6 +383,30 @@ describe("detectCharacters", () => {
     expect(chars).toHaveLength(0);
   });
 
+  it("captures two-word names (#33)", () => {
+    const content = '"Run!" Mary Jane shouted.';
+    const chars = detectCharacters(content, "");
+    expect(chars).toContain("mary jane");
+  });
+
+  it("captures apostrophe names (#33)", () => {
+    const content = '"Get out," O\'Brien snapped.';
+    const chars = detectCharacters(content, "");
+    expect(chars).toContain("o'brien");
+  });
+
+  it("captures hyphenated names (#33)", () => {
+    const content = '"Hi," Mary-Anne whispered.';
+    const chars = detectCharacters(content, "");
+    expect(chars).toContain("mary-anne");
+  });
+
+  it("captures all-caps shouted attribution (#33)", () => {
+    const content = '"WAIT!" MARY shouted.';
+    const chars = detectCharacters(content, "");
+    expect(chars).toContain("mary");
+  });
+
   it("handles comma-separated focus field", () => {
     const chars = detectCharacters("", "protagonist, tim, rabbit");
     expect(chars).toContain("protagonist");
