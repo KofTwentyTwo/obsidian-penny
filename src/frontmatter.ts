@@ -285,17 +285,30 @@ export function detectCharacters(content: string, focusField: string): string[] 
     }
   }
 
-  // From dialogue attribution patterns.
-  const attributionRe = /(?:^|\s)([A-Z][a-z]+)\s+(?:said|asked|whispered|muttered|yelled|replied|shouted|murmured|called|snapped)/gm;
-  let m: RegExpExecArray | null;
-  while ((m = attributionRe.exec(content)) !== null) {
-    chars.add(m[1].toLowerCase());
+  // Verb list shared across attribution directions. Includes shouted variants.
+  const VERBS = "said|asked|whispered|muttered|yelled|replied|shouted|murmured|called|snapped|growled|sighed|laughed|hissed|breathed|cried";
+  // Capture name shapes (issue #33):
+  //   - Single PascalCase: "Mary"
+  //   - Hyphenated:        "Mary-Anne"
+  //   - Apostrophe names:  "O'Brien", "M'Lady"
+  //   - All-caps shouted:  "MARY"
+  //   - Two-word names:    "Mary Jane", "Mary-Anne O'Connor"
+  // The hyphen/apostrophe alternative comes first so single-letter prefixes
+  // (the "O" in "O'Brien") are allowed only when followed by a separator and
+  // a capitalized continuation -- avoids matching the pronoun "I said".
+  const SINGLE = "(?:[A-Z][a-zA-Z]*['-][A-Z][a-zA-Z]+|[A-Z][a-zA-Z]+|[A-Z]{2,})";
+  const NAME = `${SINGLE}(?:\\s+${SINGLE})?`;
+
+  // Forward: `Name said` / `Name shouted` etc.
+  const forwardRe = new RegExp(`(?:^|\\s)(${NAME})\\s+(?:${VERBS})\\b`, "gm");
+  for (const match of content.matchAll(forwardRe)) {
+    chars.add(match[1].toLowerCase());
   }
 
   // Reverse: `said Name`
-  const reverseRe = /(?:said|asked|whispered|muttered|yelled|replied|shouted|murmured|called|snapped)\s+([A-Z][a-z]+)/gm;
-  while ((m = reverseRe.exec(content)) !== null) {
-    chars.add(m[1].toLowerCase());
+  const reverseRe = new RegExp(`(?:${VERBS})\\s+(${NAME})\\b`, "gm");
+  for (const match of content.matchAll(reverseRe)) {
+    chars.add(match[1].toLowerCase());
   }
 
   return Array.from(chars);
