@@ -25,7 +25,7 @@ import type { ContextFiles } from "./context";
 import type { CompletionRequest, CompletionResponse } from "./providers/service";
 import type { RouteConfig, ComplexityTier } from "./providers/router";
 import { TAG_COMPLEXITY } from "./providers/router";
-import { parseAnnotations } from "./parser";
+import { parseAnnotations, parseAnnotationsWithWarnings } from "./parser";
 import { assembleContext } from "./context";
 import { buildPrompt, callProvider } from "./drafter";
 import { assembleNewVersion } from "./assembler";
@@ -176,8 +176,12 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
   const { content, settings, chapterId, bookId } = input;
   const onProgress = input.onProgress;
 
-  // (a) Parse annotations (use pre-parsed if provided to avoid redundant work)
-  const allAnnotations = input.preParsedAnnotations ?? parseAnnotations(content);
+  // (a) Parse annotations (use pre-parsed if provided to avoid redundant work).
+  // Always also collect parser warnings (unknown tags, empty instructions,
+  // unclosed multi-line annotations) so they surface in the review note.
+  const parsed = parseAnnotationsWithWarnings(content);
+  const allAnnotations = input.preParsedAnnotations ?? parsed.annotations;
+  const parserWarnings = parsed.warnings;
 
   // (b) Read version and state
   const currentVersion = readVersion(input.versionContent);
@@ -209,7 +213,10 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult 
   // (e) Process each annotation via the LLM provider
   const revisions: Array<{ annotation: AnnotatedSection; revisedText: string }> = [];
   const changes: AnnotationChange[] = [];
-  const flags: ReviewFlag[] = [];
+  // Seed the review flags with any parser warnings (issue #30) so authors
+  // see typo'd tags / empty instructions / unclosed blocks they would have
+  // otherwise lost silently.
+  const flags: ReviewFlag[] = [...parserWarnings];
   const processedTags: string[] = [];
   let hadErrors = false;
   let completedCount = 0;

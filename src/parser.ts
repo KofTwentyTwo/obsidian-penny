@@ -21,9 +21,23 @@
 import {
   type AnnotatedSection,
   type AnnotationTag,
+  type ReviewFlag,
   ACTIONABLE_TAGS,
   ALL_TAGS,
 } from "./types";
+
+/**
+ * Parser warnings raised during `parseAnnotationsWithWarnings`. Surfaced in
+ * the review note's "Flags for Author" section so authors notice typo'd tags
+ * (e.g. `REWIRTE`) and unclosed multi-line annotations that would otherwise
+ * be silently dropped (issue #30).
+ */
+export type ParserWarning = ReviewFlag;
+
+export interface ParsedAnnotations {
+  annotations: AnnotatedSection[];
+  warnings: ParserWarning[];
+}
 
 /** Single-line annotation: `%% TAG: instruction %%` on one line. Captures tag and instruction. */
 const ANNOTATION_PATTERN = /%%\s*([A-Z]+)\s*:\s*(.*?)\s*%%/;
@@ -204,8 +218,19 @@ function resolveScope(
  *          silently skipped.
  */
 export function parseAnnotations(content: string): AnnotatedSection[] {
+  return parseAnnotationsWithWarnings(content).annotations;
+}
+
+/**
+ * Same parse as `parseAnnotations`, but also returns warnings about malformed
+ * annotations the parser dropped: unknown tags (typos), empty instructions,
+ * and unclosed multi-line blocks. Surface these in the review note so the
+ * author sees them instead of silently losing the annotation (issue #30).
+ */
+export function parseAnnotationsWithWarnings(content: string): ParsedAnnotations {
   const lines = content.split("\n");
   const results: AnnotatedSection[] = [];
+  const warnings: ParserWarning[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -219,8 +244,21 @@ export function parseAnnotations(content: string): AnnotatedSection[] {
       const tag = match[1];
       const instruction = match[2].trim();
 
-      // Skip malformed: unrecognised tag or empty instruction.
-      if (!isValidTag(tag) || instruction.length === 0) {
+      // Surface malformed annotations as warnings instead of silently dropping.
+      if (!isValidTag(tag)) {
+        warnings.push({
+          type: "unknown_tag",
+          line: i + 1,
+          description: `Unknown annotation tag "${tag}" -- did you mean one of: ${ALL_TAGS.slice(0, 6).join(", ")}, ...?`,
+        });
+        continue;
+      }
+      if (instruction.length === 0) {
+        warnings.push({
+          type: "empty_instruction",
+          line: i + 1,
+          description: `Empty instruction for tag ${tag}; nothing to process`,
+        });
         continue;
       }
 
@@ -283,6 +321,29 @@ export function parseAnnotations(content: string): AnnotatedSection[] {
         }
 
         const instruction = instructionParts.join(" ").trim();
+        // Detect unclosed multi-line annotations: closeLine is still i when
+        // no closing %% was found within the 20-line scan window.
+        if (closeLine === i) {
+          warnings.push({
+            type: "unclosed_annotation",
+            line: i + 1,
+            description: `Unclosed multi-line annotation opened with %% ${tag}: -- missing closing %% within 20 lines`,
+          });
+          continue;
+        }
+        if (!isValidTag(tag)) {
+          warnings.push({
+            type: "unknown_tag",
+            line: i + 1,
+            description: `Unknown annotation tag "${tag}" -- did you mean one of: ${ALL_TAGS.slice(0, 6).join(", ")}, ...?`,
+          });
+        } else if (instruction.length === 0) {
+          warnings.push({
+            type: "empty_instruction",
+            line: i + 1,
+            description: `Empty instruction for tag ${tag}; nothing to process`,
+          });
+        }
         if (isValidTag(tag) && instruction.length > 0) {
           // Use the line AFTER the closing %% as the annotation target
           const annotationLineIndex = closeLine;
@@ -325,5 +386,7 @@ export function parseAnnotations(content: string): AnnotatedSection[] {
 
   // Sort by lineStart ascending (stable).
   results.sort((a, b) => a.lineStart - b.lineStart);
-  return results;
+  // Sort warnings by line so the review note presents them top-down.
+  warnings.sort((a, b) => a.line - b.line);
+  return { annotations: results, warnings };
 }

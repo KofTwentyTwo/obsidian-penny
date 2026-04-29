@@ -507,7 +507,14 @@ export interface AnnotationChange {
  */
 export interface ReviewFlag {
   /** Category of the flag. */
-  type: "research" | "plot" | "vague" | "error";
+  type:
+    | "research"
+    | "plot"
+    | "vague"
+    | "error"
+    | "unknown_tag"
+    | "empty_instruction"
+    | "unclosed_annotation";
   /** Line number associated with the flag. */
   line: number;
   /** Human-readable description of what needs attention. */
