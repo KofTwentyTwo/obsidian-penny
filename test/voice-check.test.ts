@@ -34,6 +34,42 @@ describe("checkVoiceCompliance", () => {
       expect(result.dialogueRatio).toBeGreaterThan(0);
     });
 
+    it("counts British single-quoted dialogue (#5)", () => {
+      // 'Hello there' = 2 words of dialogue out of 5 total \u2192 ratio 0.4
+      const prose = "'Hello there,' she said.";
+      const result = checkVoiceCompliance(prose);
+      expect(result.dialogueRatio).toBeGreaterThan(0);
+      expect(result.dialogueRatio).toBeLessThan(1);
+    });
+
+    it("does not double-count apostrophes inside contractions (#5)", () => {
+      // The contraction "don't" must not register as opening a quote span.
+      const prose = "She said \"I don't know what you're doing.\" The day went on.";
+      const result = checkVoiceCompliance(prose);
+      // Dialogue: "I don't know what you're doing" = 6 words
+      // Total words: ~14
+      expect(result.dialogueRatio).toBeGreaterThan(0.3);
+      expect(result.dialogueRatio).toBeLessThan(0.6);
+    });
+
+    it("counts mixed quote styles in the same chapter (#5)", () => {
+      const prose = '"Hi," he said. \u2018Bye,\u2019 she replied. \u201CGood,\u201D he agreed.';
+      const result = checkVoiceCompliance(prose);
+      // Three single-word dialogue spans out of ~9 total \u2192 > 0.3
+      expect(result.dialogueRatio).toBeGreaterThan(0.3);
+    });
+
+    it("strips British single-quoted dialogue from narration analysis (#5)", () => {
+      // Without stripping, the long sentence below would NOT exceed 20 words
+      // because the dialogue would inflate the count. With proper stripping,
+      // the narration is short and below threshold.
+      const prose =
+        "'I think I shall walk to the very far end of the very long lane today.' She said it firmly.";
+      const result = checkVoiceCompliance(prose);
+      // Narration is short; should not flag a long sentence.
+      expect(result.longNarrationSentences).toHaveLength(0);
+    });
+
     it("returns 0 for empty text", () => {
       const result = checkVoiceCompliance("");
       expect(result.dialogueRatio).toBe(0);
