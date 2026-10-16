@@ -16,6 +16,7 @@
  */
 
 import type { PennySettings } from "./types";
+import { stripHtmlComments } from "./frontmatter";
 
 /**
  * Map of PENNY.md key names (lowercase, kebab-case) to their corresponding
@@ -171,7 +172,7 @@ export function parseProjectConfig(content: string): Partial<PennySettings> {
 
   // Strip inline HTML comments that weren't caught by the multi-line filter
   const cleaned = voiceLines.map(line =>
-    line.replace(/<!--[\s\S]*?-->/g, "").trim()
+    stripHtmlComments(line).trim()
   ).filter(line => line.length > 0);
 
   const voiceRulesText = cleaned.join("\n").trim();

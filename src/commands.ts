@@ -2203,7 +2203,7 @@ Rules:
     const fileContent = `---
 type: research
 topic: "${topic}"
-query: "${query.replace(/"/g, '\\"')}"
+query: "${query.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"
 date: ${new Date().toISOString().split("T")[0]}
 ---
 
