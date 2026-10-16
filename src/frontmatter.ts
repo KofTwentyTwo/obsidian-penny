@@ -237,6 +237,19 @@ export function updateAgentFields(
  * @param proseMarker - The HTML comment that marks the start of prose
  * @returns Word count of the prose section
  */
+/**
+ * Remove HTML comments, repeating until none remain so a comment split around
+ * another one (e.g. `<!<!-- x -->-- y -->`) cannot leave a new comment behind.
+ */
+export function stripHtmlComments(text: string): string {
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<!--[\s\S]*?-->/g, "");
+  } while (text !== previous);
+  return text;
+}
+
 export function countProseWords(content: string, proseMarker: string): number {
   let text = content;
 
@@ -250,7 +263,7 @@ export function countProseWords(content: string, proseMarker: string): number {
   // Strip markdown comments %% ... %% (including multi-line)
   text = text.replace(/%%[\s\S]*?%%/g, "");
   // Strip HTML comments <!-- ... -->
-  text = text.replace(/<!--[\s\S]*?-->/g, "");
+  text = stripHtmlComments(text);
   // Strip markdown headings markers (keep the text)
   text = text.replace(/^#{1,6}\s/gm, "");
 
