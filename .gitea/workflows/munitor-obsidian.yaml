@@ -20,4 +20,3 @@ jobs:
     uses: self:KofTwentyTwo/platform-ci/.gitea/workflows/munitor-obsidian.yaml@kof-release-v1
     with:
       runner: linux-small
-      build-runner: browser-build
