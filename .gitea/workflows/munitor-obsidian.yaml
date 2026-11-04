@@ -1,0 +1,22 @@
+name: Original Obsidian plugin build and release
+'on':
+  push:
+    branches:
+    - main
+    - develop
+    - feature/**
+    - hotfix/**
+    - release/**
+  pull_request: {}
+  workflow_dispatch: {}
+permissions:
+  contents: write
+  actions: read
+jobs:
+  plugin:
+    if: ${{ (github.head_ref || github.ref_name) == 'main' || (github.head_ref || github.ref_name) == 'develop' || startsWith((github.head_ref
+      || github.ref_name), 'feature/') || startsWith((github.head_ref || github.ref_name), 'hotfix/') || startsWith((github.head_ref
+      || github.ref_name), 'release/') }}
+    uses: self:KofTwentyTwo/platform-ci/.gitea/workflows/munitor-obsidian.yaml@kof-release-v1
+    with:
+      runner: linux-small
