@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { OllamaProvider } from "../../src/providers/ollama";
 import type { HttpFn, HttpResponse, CompletionRequest } from "../../src/providers/service";
 
@@ -283,14 +283,24 @@ describe("OllamaProvider", () => {
     });
 
     it("throws connection refused message when Ollama is not running", async () => {
+      let attempts = 0;
       const fn: HttpFn = async () => {
+        attempts++;
         throw new Error("ECONNREFUSED");
       };
       const provider = new OllamaProvider(fn);
+      // Zero the retry jitter: the default 3 retries back off up to 1+2+4 s at random,
+      // which intermittently exceeded the 5 s test timeout.
+      const random = vi.spyOn(Math, "random").mockReturnValue(0);
 
-      await expect(
-        provider.complete(makeRequest()),
-      ).rejects.toThrow("Cannot connect to Ollama at http://localhost:11434. Is Ollama running?");
+      try {
+        await expect(
+          provider.complete(makeRequest()),
+        ).rejects.toThrow("Cannot connect to Ollama at http://localhost:11434. Is Ollama running?");
+        expect(attempts).toBe(4);
+      } finally {
+        random.mockRestore();
+      }
     });
   });
 
