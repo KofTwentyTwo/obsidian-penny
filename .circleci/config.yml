@@ -1,8 +1,0 @@
-version: 2.1
-setup: true
-orbs:
-  munitor: kof22/munitor@dev:snapshot
-workflows:
-  setup:
-    jobs:
-      - munitor/generate_pipeline

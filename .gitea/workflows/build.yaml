@@ -1,0 +1,13 @@
+name: build
+on:
+  push:
+jobs:
+  node:
+    uses: self:KofTwentyTwo/ci-workflows/.gitea/workflows/node.yaml@v1
+    secrets: inherit
+    with:
+      node-version: '22'
+      # check = typecheck + vitest with the coverage thresholds enforced
+      commands: |
+        npm run build
+        npm run check
