@@ -288,8 +288,10 @@ describe("OllamaProvider", () => {
       };
       const provider = new OllamaProvider(fn);
 
+      // maxRetries: 0 keeps this single-attempt; retry behavior covered separately.
+      // (With the default 3 jittered retries the backoff can exceed the 5 s test timeout.)
       await expect(
-        provider.complete(makeRequest()),
+        provider.complete(makeRequest({ maxRetries: 0 })),
       ).rejects.toThrow("Cannot connect to Ollama at http://localhost:11434. Is Ollama running?");
     });
   });
